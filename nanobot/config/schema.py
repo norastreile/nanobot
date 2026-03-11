@@ -210,6 +210,29 @@ class WecomConfig(Base):
     welcome_message: str = ""  # Welcome message for enter_chat event
 
 
+class VoiceConfig(Base):
+    """Voice Channel configuration."""
+    enabled: bool = False
+    allow_from: list[str] =  Field(default_factory=list) # Allowed voice users (empty = public access)
+    
+    # Wake word settings
+    wake_word_model: str = "" # path to Porcupine wakeword model .pv file 
+    wake_word_keyword: str = "" # path to custom wakeword .ppn file 
+    sensitivity: float = 1.0 #set higher for longer distances to microphone
+    
+    # Audio settings
+    audio_device_index: int = 1
+    silence_threshold: int = 500
+    silence_duration: float = 1.5  # in seconds
+    max_recording_duration: float = 30 # in seconds
+    
+    # TTS settings
+    tts_voice = "en-US-AriaNeural" # default voice
+    
+    # Picovoice API key
+    picovoice_api_key: str = "" # required, paste own api key in config.json
+
+
 class ChannelsConfig(Base):
     """Configuration for chat channels."""
 
@@ -226,6 +249,7 @@ class ChannelsConfig(Base):
     qq: QQConfig = Field(default_factory=QQConfig)
     matrix: MatrixConfig = Field(default_factory=MatrixConfig)
     wecom: WecomConfig = Field(default_factory=WecomConfig)
+    voice: VoiceConfig = Field(default_factory=VoiceConfig)
 
 
 class AgentDefaults(Base):
