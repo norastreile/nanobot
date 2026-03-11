@@ -1,0 +1,37 @@
+{
+  "description": "Give nanobot ears and a voice.",
+  "requirements": "Pico",
+  "setup": {
+    "docsLabel": "Open voice setup",
+    "officialLabel": "Open voice console",
+    "tryIt": "Let nanobot speak a test message.",
+    "summary": "Voice channel with wake word detection for local microphone/speaker interaction.",
+    "steps": [
+      "Obtain access key from Picovoice Console (https://console.picovoice.ai/).",
+      "Choose Edge TTS voice (https://edge-tts.com/)",
+      "C."
+    ],
+    "fields": {
+      "wake_word_keywords": {
+        "label": "Wake words",
+        "placeholder": "nano",
+        "help": "List of wake words to make nanobot start listen."
+      },
+      "picovoice_access_key": {
+        "label": "Picovoice access key",
+        "placeholder": "••••••",
+        "help": "Obtain access key from Picovoice Console, see https://console.picovoice.ai/."
+      },
+      "tts_voice": {
+        "label": "Voice",
+        "placeholder": "en-US-AriaNeural",
+        "help": "The voice nanobot uses to answer, see https://edge-tts.com/."
+      },
+      "allowFrom": {
+        "label": "Allowed users",
+        "placeholder": "*",
+        "help": "User IDs, comma separated, * for all users"
+      }
+    }
+  }
+}
