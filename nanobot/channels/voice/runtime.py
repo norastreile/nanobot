@@ -80,11 +80,15 @@ class VoiceChannel(BaseChannel):
     @staticmethod
     def _safe_float(val: Any) -> float:
         """Parse a sensitivity value; normalize 0-100 input to the 0.0-1.0 range Porcupine expects."""
+        if isinstance(val, str):
+            # Accept comma as decimal separator (e.g. "0,5")
+            val = val.replace(",", ".")
         try:
             value = float(val)
         except (TypeError, ValueError):
             return 0.5
         return value / 100 if value > 1 else value
+
     def __init__(self, config: Any, bus: MessageBus):
         if isinstance(config, dict):
             config = VoiceConfig.model_validate(config)
