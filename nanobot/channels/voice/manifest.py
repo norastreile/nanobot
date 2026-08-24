@@ -17,6 +17,7 @@ SETUP_SPEC = ChannelSetupSpec(
         "silence_duration": field(kind="int", default=1500), #in milliseconds
         "max_recording_duration": field(kind="int", default=30), #in seconds
         "tts_voice": field(kind="string", default="en-US-AriaNeural"),
+        "led_command": field(kind="string"),  # optional status LED shell command, status as $1
         "allowFrom": field("list"),
     },
     required=required_fields("picovoice_access_key"),

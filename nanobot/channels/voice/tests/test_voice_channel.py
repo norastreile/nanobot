@@ -7,6 +7,11 @@ import pytest
 
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.voice.runtime import VoiceChannel, VoiceConfig
+from nanobot.channels.voice.status import (
+    CommandStatusListener,
+    VoiceStatus,
+    VoiceStatusEmitter,
+)
 
 
 def make_channel(config: dict | None = None) -> VoiceChannel:
@@ -119,4 +124,59 @@ async def test_speak_completes_without_audio_player(monkeypatch) -> None:
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fail_exec)
     channel = make_channel()
     await channel._speak("Hallo Welt")
+
+
+# --- Status emitter / LED listener ---
+
+
+async def test_emitter_notifies_listeners() -> None:
+    received: list[VoiceStatus] = []
+
+    class _Listener:
+        async def on_voice_status(self, status: VoiceStatus) -> None:
+            received.append(status)
+
+    emitter = VoiceStatusEmitter()
+    emitter.add_listener(_Listener())
+    await emitter.emit(VoiceStatus.RECORDING)
+    await emitter.emit(VoiceStatus.SPEAKING)
+
+    assert received == [VoiceStatus.RECORDING, VoiceStatus.SPEAKING]
+
+
+async def test_emitter_isolates_listener_failures() -> None:
+    ok_statuses: list[VoiceStatus] = []
+
+    class _Broken:
+        async def on_voice_status(self, status: VoiceStatus) -> None:
+            raise RuntimeError("LED hardware gone")
+
+    class _Ok:
+        async def on_voice_status(self, status: VoiceStatus) -> None:
+            ok_statuses.append(status)
+
+    emitter = VoiceStatusEmitter()
+    emitter.add_listener(_Broken())
+    emitter.add_listener(_Ok())
+
+    await emitter.emit(VoiceStatus.THINKING)  # must not raise
+    assert ok_statuses == [VoiceStatus.THINKING]
+
+
+async def test_command_listener_receives_status_as_arg(tmp_path) -> None:
+    out = tmp_path / "statuses.txt"
+    listener = CommandStatusListener(f'echo "$1" >> {out}')
+
+    await listener.on_voice_status(VoiceStatus.RECORDING)
+    await listener.on_voice_status(VoiceStatus.LISTENING_WAKE_WORD)
+
+    assert out.read_text().splitlines() == ["recording", "listening_wake_word"]
+
+
+def test_channel_registers_led_listener_from_config() -> None:
+    channel = make_channel({"led_command": "true"})
+    assert len(channel.status_emitter._listeners) == 1
+
+    plain = make_channel()
+    assert plain.status_emitter._listeners == []
 

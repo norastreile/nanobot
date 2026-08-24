@@ -13,6 +13,7 @@ from pydantic import Field
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
+from nanobot.channels.voice.status import CommandStatusListener, VoiceStatus, VoiceStatusEmitter
 from nanobot.config.schema import Base
 
 PICOVOICE_AVAILABLE = False
@@ -58,6 +59,10 @@ class VoiceConfig(Base):
     # TTS settings
     tts_voice: str = "en-US-AriaNeural"
 
+    # Optional status indicator (e.g. LED). Shell command executed on every state
+    # change via `sh -c <command>`, the status value is passed as $1.
+    led_command: str = ""
+
 
 class VoiceChannel(BaseChannel):
     """
@@ -97,6 +102,9 @@ class VoiceChannel(BaseChannel):
         self._porcupine = None
         self._recorder = None
         self._sample_rate = 16000
+        self.status_emitter = VoiceStatusEmitter()
+        if config.led_command:
+            self.status_emitter.add_listener(CommandStatusListener(config.led_command))
 
     async def start(self) -> None:
         """Start the voice channel with wake word detection."""
@@ -153,6 +161,7 @@ class VoiceChannel(BaseChannel):
 
             self._recorder.start()
 
+            await self.status_emitter.emit(VoiceStatus.LISTENING_WAKE_WORD)
             self.logger.info("Voice channel ready - listening for wake words ...")
 
             while self._running:
@@ -166,12 +175,14 @@ class VoiceChannel(BaseChannel):
 
                 if result >= 0:
                     self.logger.info("Wake word detected!")
+                    await self.status_emitter.emit(VoiceStatus.RECORDING)
                     await self._handle_wake_word()
 
         except Exception:
             self.logger.exception("Failed to start channel")
         finally:
             self._running = False
+            await self.status_emitter.emit(VoiceStatus.IDLE)
 
     async def stop(self) -> None:
         """Stop the voice channel."""
@@ -237,6 +248,8 @@ class VoiceChannel(BaseChannel):
 
         self.logger.info("Transcribed: {}", transcription)
 
+        await self.status_emitter.emit(VoiceStatus.THINKING)
+
         # Send to agent via message bus
         await self._handle_message(
             sender_id="voice_user",
@@ -291,6 +304,7 @@ class VoiceChannel(BaseChannel):
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
             temp_path = Path(f.name)
 
+        await self.status_emitter.emit(VoiceStatus.SPEAKING)
         try:
             # Generate TTS
             communicate = edge_tts.Communicate(text, self.config.tts_voice)
@@ -328,3 +342,6 @@ class VoiceChannel(BaseChannel):
                 self.logger.error("Could not play audio: {}", e)
         finally:
             temp_path.unlink(missing_ok=True)
+
+        if self._running:
+            await self.status_emitter.emit(VoiceStatus.LISTENING_WAKE_WORD)
