@@ -17,11 +17,5 @@ if not PICOVOICE_AVAILABLE:
 if not EDGE_TTS_AVAILABLE:
     pytest.skip("Voice dependencies not installed (edge-tts)", allow_module_level=True)
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.voice.runtime import (
-    VoiceChannel,
-    VoiceConfig,
-)
 
 

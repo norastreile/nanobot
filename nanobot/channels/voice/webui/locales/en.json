@@ -1,6 +1,6 @@
 {
   "description": "Give nanobot ears and a voice.",
-  "requirements": "Pico",
+  "requirements": "pvporcupine, pvrecorder and edge-tts",
   "setup": {
     "docsLabel": "Open voice setup",
     "officialLabel": "Open voice console",
@@ -9,7 +9,7 @@
     "steps": [
       "Obtain access key from Picovoice Console (https://console.picovoice.ai/).",
       "Choose Edge TTS voice (https://edge-tts.com/)",
-      "C."
+      "Select a microphone device index and adjust wake word settings."
     ],
     "fields": {
       "wake_word_keywords": {
