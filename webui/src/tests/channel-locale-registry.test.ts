@@ -21,6 +21,7 @@ const expectedChannels = [
   "signal",
   "slack",
   "telegram",
+  "voice",
   "websocket",
   "wecom",
   "weixin",
