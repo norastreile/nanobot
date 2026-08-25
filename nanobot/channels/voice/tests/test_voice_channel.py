@@ -174,7 +174,10 @@ async def test_command_listener_receives_status_as_arg(tmp_path) -> None:
     await listener.on_voice_status(VoiceStatus.RECORDING)
     await listener.on_voice_status(VoiceStatus.LISTENING_WAKE_WORD)
 
-    assert out.read_text().splitlines() == ["recording", "listening_wake_word"]
+    # cmd.exe (Windows) keeps the surrounding quotes of echo "$1"; strip them
+    # so the assertion holds on both POSIX sh and cmd.exe.
+    lines = [line.strip('"') for line in out.read_text().splitlines()]
+    assert lines == ["recording", "listening_wake_word"]
 
 
 def test_channel_registers_led_listener_from_config() -> None:

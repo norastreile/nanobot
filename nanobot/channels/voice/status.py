@@ -8,6 +8,7 @@ break the voice loop, so every listener call is error-isolated.
 from __future__ import annotations
 
 import asyncio
+import sys
 from enum import StrEnum
 from typing import Protocol
 
@@ -57,8 +58,10 @@ class CommandStatusListener:
     """Runs a shell command on every status change.
 
     The command is executed via ``sh -c <command>`` with the status value
-    (e.g. ``recording``) available as ``$1``. This keeps the mapping from
-    state to LED color entirely on the command side, e.g.::
+    (e.g. ``recording``) available as ``$1``. On Windows the command runs
+    through ``cmd.exe`` with ``$1`` substituted by the literal status value
+    beforehand (cmd.exe has no positional parameters). This keeps the mapping
+    from state to LED color entirely on the command side, e.g.::
 
         sh -c 'curl -s http://wled/x/json/state -d "{\"on\":true,\"seg\":{\"col\":[[255,0,0]]}}"' -- "$1"
     """
@@ -67,13 +70,20 @@ class CommandStatusListener:
         self._command = command
 
     async def on_voice_status(self, status: VoiceStatus) -> None:
-        process = await asyncio.create_subprocess_exec(
-            "/bin/sh",
-            "-c",
-            self._command,
-            "sh",
-            status.value,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
+        if sys.platform == "win32":
+            process = await asyncio.create_subprocess_shell(
+                self._command.replace("$1", status.value),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+        else:
+            process = await asyncio.create_subprocess_exec(
+                "/bin/sh",
+                "-c",
+                self._command,
+                "sh",
+                status.value,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
         await asyncio.wait_for(process.wait(), timeout=10)
