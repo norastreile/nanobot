@@ -6,7 +6,7 @@ import wave
 import pytest
 
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.voice.runtime import VoiceChannel, VoiceConfig
+from nanobot.channels.voice.runtime import SPEAKER_ID, VoiceChannel, VoiceConfig
 from nanobot.channels.voice.status import (
     CommandStatusListener,
     VoiceStatus,
@@ -81,9 +81,13 @@ async def test_send_ignores_empty_messages() -> None:
 
 
 def test_is_allowed_uses_allow_from() -> None:
-    channel = make_channel({"allowFrom": ["voice_user"]})
-    assert channel.is_allowed("voice_user")
+    channel = make_channel({"allowFrom": [SPEAKER_ID]})
+    assert channel.is_allowed(SPEAKER_ID)
     assert not channel.is_allowed("stranger")
+
+
+def test_inbound_message_uses_speaker_id() -> None:
+    assert SPEAKER_ID == "local_speaker"
 
 
 # --- TTS tests (skipped when edge-tts is not installed or offline) ---

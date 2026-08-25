@@ -8,9 +8,9 @@ from nanobot.channels.plugin import ChannelPlugin
 SETUP_SPEC = ChannelSetupSpec(
     fields={
         "picovoice_access_key": field("secret"), # Picovoice API key
-        "wake_word_model": field("string"), # path to Porcupine wakeword model .pv file
-        "wake_word_keywords": field("list", default=["nano"]), # list of wake words
-        "wake_word_keyword_paths": field("list"), # path to custom wakeword .ppn file
+        "porcupine_model": field("string"), # path to Porcupine speech model .pv file (language/base model), NOT a wake word keyword
+        "wake_word_keywords": field("list", default=["nano"]), # built-in wake word names (e.g. "nano"); only used when wake_word_keyword_paths is empty
+        "wake_word_keyword_paths": field("list"), # paths to custom wake word keywords (.ppn files); take precedence over wake_word_keywords
         "wake_word_sensitivities": field("list", default=["0.5"]), # list of wake word sensitivities, range 0.0 to 1.0 (higher = detects wake word at greater distance/noise)
         "audio_device_index": field(kind="int", default=1),
         "silence_threshold": field(kind="int", default=500),

@@ -12,15 +12,55 @@
       "Select a microphone device index and adjust wake word settings."
     ],
     "fields": {
-      "wake_word_keywords": {
-        "label": "Wake words",
-        "placeholder": "nano",
-        "help": "List of wake words to make nanobot start listen."
-      },
       "picovoice_access_key": {
         "label": "Picovoice access key",
         "placeholder": "••••••",
         "help": "Obtain access key from Picovoice Console, see https://console.picovoice.ai/."
+      },
+      "porcupine_model": {
+        "label": "Porcupine model (.pv)",
+        "placeholder": "",
+        "help": "Path to the Porcupine speech model file (.pv), e.g. a language-specific model like porcupine_params_de.pv. This is NOT the wake word itself — custom wake words go into 'Custom wake word paths' (.ppn). Leave empty for the default English model."
+      },
+      "wake_word_keywords": {
+        "label": "Wake words",
+        "placeholder": "nano",
+        "help": "Built-in wake word names (e.g. 'nano'). Only used when no custom wake word paths (.ppn) are set."
+      },
+      "wake_word_keyword_paths": {
+        "label": "Custom wake word paths (.ppn)",
+        "placeholder": "",
+        "help": "Paths to compiled custom wake word keyword files (.ppn) built in the Picovoice Console. These take precedence over the built-in 'Wake words' and require a matching .pv model (see 'Porcupine model')."
+      },
+      "wake_word_sensitivities": {
+        "label": "Wake word sensitivities",
+        "placeholder": "0.5",
+        "help": "Wake word sensitivities from 0.0 to 1.0 (higher = detects at greater distance/noise), one per wake word in the same order. Missing values default to 0.5."
+      },
+      "audio_device_index": {
+        "label": "Audio device index",
+        "placeholder": "1",
+        "help": "Index of the microphone device used for recording."
+      },
+      "silence_threshold": {
+        "label": "Silence threshold",
+        "placeholder": "500",
+        "help": "Audio amplitude below which input is considered silence."
+      },
+      "silence_duration": {
+        "label": "Silence duration",
+        "placeholder": "1500",
+        "help": "Silence duration in milliseconds before recording stops."
+      },
+      "max_recording_duration": {
+        "label": "Max recording duration",
+        "placeholder": "30",
+        "help": "Maximum recording duration in seconds."
+      },
+      "led_command": {
+        "label": "LED status command",
+        "placeholder": "",
+        "help": "Optional shell command to drive a status LED; receives the status as $1."
       },
       "tts_voice": {
         "label": "Voice",
@@ -29,8 +69,8 @@
       },
       "allowFrom": {
         "label": "Allowed users",
-        "placeholder": "*",
-        "help": "User IDs, comma separated, * for all users"
+        "placeholder": "local_speaker",
+        "help": "Sender IDs that may talk to nanobot. Use 'local_speaker' to allow the person speaking into the local microphone, '*' for everyone."
       }
     }
   }

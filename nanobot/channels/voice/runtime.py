@@ -34,20 +34,25 @@ try:
 except ImportError:
     pass
 
+# Identity of the person speaking into the local microphone. Used as
+# sender_id for inbound messages so allowFrom can grant access to "the
+# person at the device" without a real user ID.
+SPEAKER_ID = "local_speaker"
+
 
 class VoiceConfig(Base):
     """Voice Channel configuration."""
 
     enabled: bool = False
-    allow_from: list[str] = Field(default_factory=list)  # Allowed voice users
+    allow_from: list[str] = Field(default_factory=list)  # Allowed senders, e.g. ["local_speaker"] or ["*"]
 
     # Picovoice access key
     picovoice_access_key: str = ""  # required
 
     # Wake word settings
-    wake_word_model: str = ""  # path to Porcupine wakeword model .pv file
-    wake_word_keywords: list[str] = Field(default_factory=lambda: ["nano"])  # list of wake words
-    wake_word_keyword_paths: list[str] = Field(default_factory=list)  # path to custom wakeword .ppn file
+    porcupine_model: str = ""  # path to the Porcupine speech model (.pv), e.g. language-specific; NOT a wake word keyword
+    wake_word_keywords: list[str] = Field(default_factory=lambda: ["nano"])  # built-in keyword names; used only if wake_word_keyword_paths is empty
+    wake_word_keyword_paths: list[str] = Field(default_factory=list)  # paths to custom wake word keywords (.ppn) from Picovoice Console; take precedence over wake_word_keywords
     wake_word_sensitivities: list[str] = Field(default_factory=lambda: ["0.5"])  # range 0.0 to 1.0
 
     # Audio settings
@@ -125,21 +130,41 @@ class VoiceChannel(BaseChannel):
 
         try:
 
-            model_path: str = self.config.wake_word_model
+            model_path: str = self.config.porcupine_model
             if model_path and len(model_path.strip()) < 1:
                 model_path = None
 
-            keywords: Optional[list[str]] = self.config.wake_word_keywords
-            if not keywords or not keywords[0].strip():
-                keywords = None
+            keyword_paths: Optional[list[str]] = self.config.wake_word_keyword_paths
+            if not keyword_paths or not keyword_paths[0].strip():
+                keyword_paths = None
 
-            keyword_paths: Optional[list[str]] = None
-            if not keywords:
-                keyword_paths = self.config.wake_word_keyword_paths
-                if not keyword_paths or not keyword_paths[0].strip():
-                    keyword_paths = None
+            keywords: Optional[list[str]] = None
+            if keyword_paths is None:
+                # No custom wake words (.ppn): fall back to built-in keyword names.
+                keywords = self.config.wake_word_keywords
+                if not keywords or not keywords[0].strip():
+                    raise ValueError(
+                        "Voice channel requires either 'wake_word_keyword_paths' "
+                        "(custom .ppn wake words) or non-empty 'wake_word_keywords'."
+                    )
 
+            num_keywords = len(keyword_paths) if keyword_paths else len(keywords)
             sensitivities = [self._safe_float(x) for x in self.config.wake_word_sensitivities]
+            if len(sensitivities) < num_keywords:
+                self.logger.warning(
+                    "Number of sensitivities (%d) does not match number of wake words (%d); "
+                    "padding with 0.5.",
+                    len(sensitivities),
+                    num_keywords,
+                )
+                sensitivities = sensitivities + [0.5] * (num_keywords - len(sensitivities))
+            elif len(sensitivities) > num_keywords:
+                self.logger.warning(
+                    "Number of sensitivities (%d) exceeds number of wake words (%d); truncating.",
+                    len(sensitivities),
+                    num_keywords,
+                )
+                sensitivities = sensitivities[:num_keywords]
 
             # Initialize Porcupine wake word engine
             self._porcupine = pvporcupine.create(
@@ -252,7 +277,7 @@ class VoiceChannel(BaseChannel):
 
         # Send to agent via message bus
         await self._handle_message(
-            sender_id="voice_user",
+            sender_id=SPEAKER_ID,
             chat_id="voice",
             content=transcription,
             metadata={"source": "voice"}

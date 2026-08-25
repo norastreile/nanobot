@@ -13,7 +13,7 @@ export default {
       docsUrl: chatAppGuideUrl("voice"),
       fields: [
         { key: "channels.voice.picovoice_access_key" },
-        { key: "channels.voice.wake_word_model" },
+        { key: "channels.voice.porcupine_model" },
         { key: "channels.voice.wake_word_keywords" },
         { key: "channels.voice.wake_word_keyword_paths" },
         { key: "channels.voice.wake_word_sensitivities" },
