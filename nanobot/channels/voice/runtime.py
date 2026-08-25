@@ -16,23 +16,17 @@ from nanobot.channels.base import BaseChannel
 from nanobot.channels.voice.status import CommandStatusListener, VoiceStatus, VoiceStatusEmitter
 from nanobot.config.schema import Base
 
-PICOVOICE_AVAILABLE = False
-EDGE_TTS_AVAILABLE = False
-
 try:
     import pvporcupine
     from pvrecorder import PvRecorder
-
-    PICOVOICE_AVAILABLE = True
 except ImportError:
-    pass
+    pvporcupine = None  # type: ignore[assignment]
+    PvRecorder = None  # type: ignore[assignment]
 
 try:
     import edge_tts
-
-    EDGE_TTS_AVAILABLE = True
 except ImportError:
-    pass
+    edge_tts = None  # type: ignore[assignment]
 
 # Identity of the person speaking into the local microphone. Used as
 # sender_id for inbound messages so allowFrom can grant access to "the
@@ -104,8 +98,8 @@ class VoiceChannel(BaseChannel):
             config = VoiceConfig.model_validate(config)
         super().__init__(config, bus)
         self.config: VoiceConfig = config
-        self._porcupine = None
-        self._recorder = None
+        self._porcupine: Any = None
+        self._recorder: Any = None
         self._sample_rate = 16000
         self.status_emitter = VoiceStatusEmitter()
         if config.led_command:
@@ -114,12 +108,12 @@ class VoiceChannel(BaseChannel):
     async def start(self) -> None:
         """Start the voice channel with wake word detection."""
 
-        if not PICOVOICE_AVAILABLE:
+        if pvporcupine is None or PvRecorder is None:
             self.logger.error(
                 "Porcupine and PvRecorder not installed. Run: nanobot plugins enable voice"
             )
             return
-        if not EDGE_TTS_AVAILABLE:
+        if edge_tts is None:
             self.logger.error(
                 "Edge TTS not installed. Run: nanobot plugins enable voice"
             )
@@ -130,9 +124,7 @@ class VoiceChannel(BaseChannel):
 
         try:
 
-            model_path: str = self.config.porcupine_model
-            if model_path and len(model_path.strip()) < 1:
-                model_path = None
+            model_path: Optional[str] = self.config.porcupine_model.strip() or None
 
             keyword_paths: Optional[list[str]] = self.config.wake_word_keyword_paths
             if not keyword_paths or not keyword_paths[0].strip():
@@ -148,7 +140,11 @@ class VoiceChannel(BaseChannel):
                         "(custom .ppn wake words) or non-empty 'wake_word_keywords'."
                     )
 
-            num_keywords = len(keyword_paths) if keyword_paths else len(keywords)
+            if keyword_paths is not None:
+                num_keywords = len(keyword_paths)
+            else:
+                assert keywords is not None
+                num_keywords = len(keywords)
             sensitivities = [self._safe_float(x) for x in self.config.wake_word_sensitivities]
             if len(sensitivities) < num_keywords:
                 self.logger.warning(
@@ -286,7 +282,7 @@ class VoiceChannel(BaseChannel):
     async def _record_until_silence(self) -> list[int]:
         """Record audio until silence is detected."""
 
-        audio_frames = []
+        audio_frames: list[int] = []
         silence_frames = 0
         frames_per_second = self._sample_rate / self._porcupine.frame_length
         silence_frames_needed = int(self.config.silence_duration / 1000 * frames_per_second)
@@ -325,6 +321,10 @@ class VoiceChannel(BaseChannel):
 
     async def _speak(self, text: str) -> None:
         """Speak text using Edge TTS."""
+
+        if edge_tts is None:
+            self.logger.error("Edge TTS not installed; cannot speak.")
+            return
 
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
             temp_path = Path(f.name)
