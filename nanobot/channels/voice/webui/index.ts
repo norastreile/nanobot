@@ -12,10 +12,7 @@ export default {
       mode: "credentials",
       docsUrl: chatAppGuideUrl("voice"),
       fields: [
-        { key: "channels.voice.picovoice_access_key" },
-        { key: "channels.voice.porcupine_model" },
-        { key: "channels.voice.wake_word_keywords" },
-        { key: "channels.voice.wake_word_keyword_paths" },
+        { key: "channels.voice.wake_word_models" },
         { key: "channels.voice.wake_word_sensitivities" },
         { key: "channels.voice.audio_device_index" },
         { key: "channels.voice.silence_threshold" },

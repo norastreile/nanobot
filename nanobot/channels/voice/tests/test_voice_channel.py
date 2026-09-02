@@ -21,7 +21,7 @@ def make_channel(config: dict | None = None) -> VoiceChannel:
 def test_default_config() -> None:
     defaults = VoiceChannel.default_config()
     assert defaults["enabled"] is False
-    assert defaults["wakeWordKeywords"] == ["nano"]
+    assert defaults["wakeWordModels"] == []
     assert defaults["wakeWordSensitivities"] == ["0.5"]
     assert defaults["ttsVoice"] == "en-US-AriaNeural"
     assert defaults["silenceDuration"] == 1500
@@ -30,20 +30,19 @@ def test_default_config() -> None:
 def test_config_accepts_camel_case_keys() -> None:
     config = VoiceConfig.model_validate(
         {
-            "picovoiceAccessKey": "test-key",
+            "wakeWordModels": ["/tmp/custom_model.tflite"],
             "allowFrom": ["*"],
             "silenceDuration": 2000,
         }
     )
-    assert config.picovoice_access_key == "test-key"
+    assert config.wake_word_models == ["/tmp/custom_model.tflite"]
     assert config.allow_from == ["*"]
     assert config.silence_duration == 2000
     # unset fields keep their defaults
-    assert config.wake_word_keywords == ["nano"]
 
 
 def test_safe_float_normalizes_percent_values() -> None:
-    # Porcupine expects 0.0-1.0; legacy 0-100 input is scaled down.
+    # openWakeWord scores are 0.0-1.0; legacy 0-100 input is scaled down.
     assert VoiceChannel._safe_float("0.5") == 0.5
     assert VoiceChannel._safe_float("100") == 1.0
     assert VoiceChannel._safe_float("50") == 0.5
