@@ -26,6 +26,7 @@ from pydantic.alias_generators import to_snake
 from nanobot.providers.base import (
     LLMProvider,
     LLMResponse,
+    LLMUsage,
     ProviderCallContext,
     ProviderConversationState,
     ToolCallRequest,
@@ -35,6 +36,7 @@ from nanobot.providers.base import (
 )
 from nanobot.providers.openai_responses import (
     ResponsesStreamCapture,
+    build_responses_compaction_state,
     build_responses_state,
     consume_sdk_stream,
     convert_tools,
@@ -356,6 +358,13 @@ def _uses_openrouter_attribution(spec: "ProviderSpec | None", api_base: str | No
     return bool(api_base and "openrouter" in api_base.lower())
 
 
+def _uses_opencode_affinity(spec: ProviderSpec | None, api_base: str | None) -> bool:
+    if spec and spec.name in {"opencode", "opencode_zen", "opencode_go"}:
+        return True
+    host = (urlparse(api_base or "").hostname or "").rstrip(".")
+    return host == "opencode.ai" or host.endswith(".opencode.ai")
+
+
 _RESPONSES_FAILURE_THRESHOLD = 3
 _RESPONSES_PROBE_INTERVAL_S = 300  # 5 minutes
 
@@ -517,8 +526,9 @@ class OpenAICompatProvider(LLMProvider):
         api_type: str = "auto",
         extra_query: dict[str, str] | None = None,
         proxy: str | None = None,
+        provider_name: str = "openai",
     ):
-        super().__init__(api_key, api_base)
+        super().__init__(api_key, api_base, provider_name=provider_name)
         self.default_model = default_model
         self.extra_headers = extra_headers or {}
         self._spec = spec
@@ -535,6 +545,12 @@ class OpenAICompatProvider(LLMProvider):
             self._default_headers.update(_DEFAULT_OPENROUTER_HEADERS)
         if extra_headers:
             self._default_headers.update(extra_headers)
+        self._opencode_session_affinity = _uses_opencode_affinity(spec, effective_base) and not any(
+            name.lower() == "x-opencode-session" for name in self.extra_headers
+        )
+        if self._opencode_session_affinity:
+            # Calls without conversation context still need a stable routing header.
+            self._default_headers["x-opencode-session"] = uuid.uuid4().hex
         self._api_key_for_client = api_key or "no-key"
         self._is_local = _is_local_endpoint(spec, effective_base)
 
@@ -769,10 +785,6 @@ class OpenAICompatProvider(LLMProvider):
                         tc_clean["function"] = function_clean
                     normalized.append(tc_clean)
                 clean["tool_calls"] = normalized
-                if clean.get("role") == "assistant":
-                    # Some OpenAI-compatible gateways reject assistant messages
-                    # that mix non-empty content with tool_calls.
-                    clean["content"] = None
             if "tool_call_id" in clean and clean["tool_call_id"]:
                 clean["tool_call_id"] = map_tool_result_id(clean["tool_call_id"])
             if (
@@ -899,6 +911,20 @@ class OpenAICompatProvider(LLMProvider):
         name = model_name.lower()
         return not any(token in name for token in ("gpt-5", "o1", "o3", "o4"))
 
+    def _opencode_affinity_headers(
+        self,
+        provider_context: "ProviderCallContext | None",
+    ) -> dict[str, str] | None:
+        """Override the instance fallback with an opaque, ASCII-safe conversation key."""
+        if (
+            not self._opencode_session_affinity
+            or provider_context is None
+            or not provider_context.session_id
+        ):
+            return None
+        session_key = hashlib.sha256(provider_context.session_id.encode("utf-8")).hexdigest()
+        return {"x-opencode-session": session_key}
+
     def _build_kwargs(
         self,
         messages: list[dict[str, Any]],
@@ -908,6 +934,7 @@ class OpenAICompatProvider(LLMProvider):
         temperature: float,
         reasoning_effort: str | None,
         tool_choice: str | dict[str, Any] | None,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         model_name = model or self.default_model
         spec = self._spec
@@ -1071,6 +1098,8 @@ class OpenAICompatProvider(LLMProvider):
         # otherwise lets extra_body.tools replace nanobot's generated functions.
         if self._extra_body:
             kwargs = _merge_chat_extra_body(kwargs, self._extra_body)
+        if extra_headers:
+            kwargs["extra_headers"] = extra_headers
 
         return kwargs
 
@@ -1340,10 +1369,14 @@ class OpenAICompatProvider(LLMProvider):
         self,
         client: Any,
         body: dict[str, Any],
+        extra_headers: dict[str, str] | None = None,
     ) -> Any:
         """Retry Responses once without server compaction on compatibility errors."""
+        request_options = (
+            {"timeout": resolve_stream_idle_timeout_s()} if body.get("stream") else {}
+        )
         try:
-            return await client.responses.create(**body)
+            return await client.responses.create(**body, extra_headers=extra_headers, **request_options)
         except Exception as exc:
             if (
                 "context_management" not in body
@@ -1357,7 +1390,7 @@ class OpenAICompatProvider(LLMProvider):
                 "(status={})",
                 getattr(exc, "status_code", None),
             )
-            return await client.responses.create(**body)
+            return await client.responses.create(**body, extra_headers=extra_headers, **request_options)
 
     # ------------------------------------------------------------------
     # Response parsing
@@ -1428,12 +1461,12 @@ class OpenAICompatProvider(LLMProvider):
         return "".join(parts) or None
 
     @classmethod
-    def _extract_usage(cls, response: Any) -> dict[str, int]:
+    def _extract_usage(cls, response: Any) -> LLMUsage | None:
         """Extract token usage from an OpenAI-compatible response.
 
         Handles both dict-based (raw JSON) and object-based (SDK Pydantic)
-        responses.  Provider-specific ``cached_tokens`` fields are normalised
-        under a single key; see the priority chain inside for details.
+        responses. Provider-specific cache fields are normalized once at
+        this Chat Completions wire boundary.
         """
         # --- resolve usage object ---
         usage_obj = None
@@ -1445,21 +1478,18 @@ class OpenAICompatProvider(LLMProvider):
 
         usage_map = cls._maybe_mapping(usage_obj)
         if usage_map is not None:
-            result = {
-                "prompt_tokens": int(usage_map.get("prompt_tokens") or 0),
-                "completion_tokens": int(usage_map.get("completion_tokens") or 0),
-                "total_tokens": int(usage_map.get("total_tokens") or 0),
-            }
+            input_tokens = int(usage_map.get("prompt_tokens") or 0)
+            output_tokens = int(usage_map.get("completion_tokens") or 0)
         elif usage_obj:
-            result = {
-                "prompt_tokens": getattr(usage_obj, "prompt_tokens", 0) or 0,
-                "completion_tokens": getattr(usage_obj, "completion_tokens", 0) or 0,
-                "total_tokens": getattr(usage_obj, "total_tokens", 0) or 0,
-            }
+            input_tokens = int(getattr(usage_obj, "prompt_tokens", 0) or 0)
+            output_tokens = int(getattr(usage_obj, "completion_tokens", 0) or 0)
         else:
-            return {}
+            return None
 
-        # --- cached_tokens (normalised across providers) ---
+        wire_total = cls._get_nested_int(usage_obj, ("total_tokens",))
+
+        cache_read: int | None = None
+        # --- cached_tokens (normalised across Chat-compatible providers) ---
         # Try nested paths first (dict), fall back to attribute (SDK object).
         # Priority order ensures the most specific field wins.
         for path in (
@@ -1468,17 +1498,28 @@ class OpenAICompatProvider(LLMProvider):
             ("prompt_cache_hit_tokens",),                # DeepSeek/SiliconFlow
         ):
             cached = cls._get_nested_int(usage_map, path)
-            if not cached and usage_obj:
+            if cached is None and usage_obj:
                 cached = cls._get_nested_int(usage_obj, path)
-            if cached:
-                result["cached_tokens"] = cached
+            if cached is not None:
+                cache_read = cached
                 break
 
-        return result
+        cache_write = cls._get_nested_int(
+            usage_obj,
+            ("prompt_tokens_details", "cache_write_tokens"),
+        )
+
+        return LLMUsage.reported(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=wire_total,
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_write,
+        )
 
     @staticmethod
-    def _get_nested_int(obj: object, path: tuple[str, ...]) -> int:
-        """Drill into *obj* by *path* segments and return an ``int`` value.
+    def _get_nested_int(obj: object, path: tuple[str, ...]) -> int | None:
+        """Return a present usage count while preserving explicit zero.
 
         Supports both dict-key access and attribute access so it works
         uniformly with raw JSON dicts **and** SDK Pydantic models.
@@ -1486,12 +1527,17 @@ class OpenAICompatProvider(LLMProvider):
         current: object = obj
         for segment in path:
             if current is None:
-                return 0
+                return None
             if isinstance(current, dict):
                 current = cast(dict[str, Any], current).get(segment)
             else:
                 current = getattr(current, segment, None)
-        return int(cast(Any, current) or 0) if current is not None else 0
+        if current is None or isinstance(current, bool):
+            return None
+        try:
+            return int(cast(Any, current))
+        except (TypeError, ValueError):
+            return None
 
     def _parse(self, response: Any) -> LLMResponse:
         if isinstance(response, str):
@@ -1645,7 +1691,7 @@ class OpenAICompatProvider(LLMProvider):
         reasoning_parts: list[str] = []
         tc_bufs: dict[int, dict[str, Any]] = {}
         finish_reason = "stop"
-        usage: dict[str, int] = {}
+        usage: LLMUsage | None = None
 
         def _accum_tc(tc: Any, idx_hint: int) -> None:
             """Accumulate one streaming tool-call delta into *tc_bufs*."""
@@ -1919,6 +1965,7 @@ class OpenAICompatProvider(LLMProvider):
         provider_context: ProviderCallContext | None = None,
     ) -> LLMResponse:
         client = await self._ensure_client()
+        affinity = self._opencode_affinity_headers(provider_context)
         try:
             if self._should_use_responses_api(model, reasoning_effort):
                 try:
@@ -1930,6 +1977,7 @@ class OpenAICompatProvider(LLMProvider):
                     responses_raw = await self._create_response_with_compaction_fallback(
                         client,
                         body,
+                        extra_headers=affinity,
                     )
                     result = parse_response_output(
                         responses_raw,
@@ -1954,6 +2002,7 @@ class OpenAICompatProvider(LLMProvider):
             kwargs = self._build_kwargs(
                 messages, tools, model, max_tokens, temperature,
                 reasoning_effort, tool_choice,
+                extra_headers=affinity,
             )
             chat_raw = cast(
                 Any,
@@ -1979,6 +2028,7 @@ class OpenAICompatProvider(LLMProvider):
     ) -> LLMResponse:
         client = await self._ensure_client()
         idle_timeout_s = resolve_stream_idle_timeout_s()
+        affinity = self._opencode_affinity_headers(provider_context)
         try:
             if self._should_use_responses_api(model, reasoning_effort):
                 try:
@@ -1991,6 +2041,7 @@ class OpenAICompatProvider(LLMProvider):
                     responses_stream = await self._create_response_with_compaction_fallback(
                         client,
                         body,
+                        extra_headers=affinity,
                     )
 
                     async def _timed_stream() -> AsyncIterator[Any]:
@@ -2034,6 +2085,18 @@ class OpenAICompatProvider(LLMProvider):
                             output_items=capture.output_items,
                             usage=usage,
                         )
+                        result.provider_compaction_state = (
+                            build_responses_compaction_state(
+                                provider=self._responses_state_provider(),
+                                model=str(body["model"]),
+                                output_items=capture.output_items,
+                            )
+                        )
+                        result.provider_compaction_applied = (
+                            result.provider_compaction_state is not None
+                        )
+                        if result.provider_compaction_applied:
+                            result.provider_compaction_scope = "current_request"
                     return result
                 except Exception as responses_error:
                     if self._spec and self._spec.name == "github_copilot":
@@ -2050,6 +2113,7 @@ class OpenAICompatProvider(LLMProvider):
             kwargs = self._build_kwargs(
                 messages, tools, model, max_tokens, temperature,
                 reasoning_effort, tool_choice,
+                extra_headers=affinity,
             )
             if self._spec and self._spec.name == "zhipu" and tools and on_tool_call_delta:
                 # Z.AI/GLM keeps streaming tool-call arguments behind an
@@ -2058,12 +2122,14 @@ class OpenAICompatProvider(LLMProvider):
                 # can surface live file-edit progress.
                 kwargs.setdefault("extra_body", {})["tool_stream"] = True
             kwargs["stream"] = True
+            kwargs["timeout"] = idle_timeout_s
             kwargs["stream_options"] = {"include_usage": True}
             chat_stream = cast(
                 Any,
                 await client.chat.completions.create(**kwargs),
             )
             chunks: list[Any] = []
+            completed = False
             stream_iter: AsyncIterator[Any] = chat_stream.__aiter__()
             while True:
                 try:
@@ -2075,6 +2141,7 @@ class OpenAICompatProvider(LLMProvider):
                     break
                 chunks.append(chunk)
                 if chunk.choices:
+                    completed |= bool(chunk.choices[0].finish_reason)
                     delta_obj = chunk.choices[0].delta
                     raw_delta_content = getattr(delta_obj, "content", None)
                     if on_content_delta:
@@ -2118,6 +2185,8 @@ class OpenAICompatProvider(LLMProvider):
                                 "name": str(_get(function_call, "name") or ""),
                                 "arguments_delta": str(_get(function_call, "arguments") or ""),
                             })
+            if not completed:
+                raise ConnectionError("Model stream ended before a finish reason was received")
             return self._parse_chunks(chunks)
         except asyncio.TimeoutError:
             return LLMResponse(
