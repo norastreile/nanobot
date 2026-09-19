@@ -2,7 +2,7 @@
 
 import platform
 
-from nanobot.channels._manifest import field, required_fields
+from nanobot.channels._manifest import field, required
 from nanobot.channels.contracts import ChannelSetupSpec
 from nanobot.channels.plugin import ChannelPlugin
 
@@ -22,7 +22,7 @@ SETUP_SPEC = ChannelSetupSpec(
         "led_command": field(kind="string"),  # optional status LED shell command, status as $1
         "allowFrom": field("list"),
     },
-    required=required_fields(),
+    required=(required("tts_voice"),),
     official_url="https://github.com/rhasspy/pyopen-wakeword",
 )
 
