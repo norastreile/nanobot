@@ -243,13 +243,37 @@ class VoiceChannel(BaseChannel):
         num_keywords = len(keyword_paths) if keyword_paths is not None else len(keywords or [])
         sensitivities = self._padded_sensitivities(num_keywords, "keywords")
 
-        self._porcupine = porcupine.create(
-            access_key=self.config.picovoice_access_key,
-            model_path=model_path,
-            keywords=keywords,
-            keyword_paths=keyword_paths,
-            sensitivities=sensitivities,
-        )
+        try:
+            self._porcupine = porcupine.create(
+                access_key=self.config.picovoice_access_key,
+                model_path=model_path,
+                keywords=keywords,
+                keyword_paths=keyword_paths,
+                sensitivities=sensitivities,
+            )
+        except porcupine.PorcupineActivationRefusedError as e:
+            raise ValueError(
+                "Picovoice refused the access key. Common causes: the key is "
+                "invalid/expired, it was created for a different platform "
+                "(create a new key with platform 'Python' in "
+                "https://console.picovoice.ai), or the key has been revoked."
+            ) from e
+        except porcupine.PorcupineActivationLimitError as e:
+            raise ValueError(
+                "Picovoice activation limit reached for this access key "
+                "(free tier allows only a few active devices). Remove old "
+                "devices in https://console.picovoice.ai or create a new key."
+            ) from e
+        except porcupine.PorcupineActivationThrottledError as e:
+            raise ValueError(
+                "Picovoice throttled activation attempts for this access key; "
+                "wait a moment and try again."
+            ) from e
+        except porcupine.PorcupineKeyError as e:
+            raise ValueError(
+                "The Picovoice access key is malformed; copy it again from "
+                "https://console.picovoice.ai without quotes or whitespace."
+            ) from e
         self._sample_rate = self._porcupine.sample_rate
         self._frame_length = self._porcupine.frame_length
         self.logger.info("Porcupine wake words: {}", keyword_paths or keywords)
