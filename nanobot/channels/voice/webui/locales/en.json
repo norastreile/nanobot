@@ -3,7 +3,7 @@
   "requirements": "Voice input, a local speaker and a microphone",
   "setup": {
     "docsLabel": "Open voice setup",
-    "officialLabel": "Open openWakeWord on GitHub",
+    "officialLabel": "Open pyopen-wakeword on GitHub",
     "tryIt": "Say your wake word followed by your command, like 'hey jarvis, how are you' into your microphone.",
     "summary": "Voice channel with wake word detection for local microphone and speaker interaction.",
     "steps": [
@@ -11,20 +11,25 @@
       "Optionally adjust the TTS (text-to-speech) voice (https://edge-tts.com), the wake word settings, the microphone device or add a led command."
     ],
     "fields": {
-      "tts_voice": {
-        "label": "Voice",
-        "placeholder": "en-US-AriaNeural",
-        "help": "The voice nanobot uses to answer (https://edge-tts.com)."
+      "wake_word_engine": {
+        "label": "Wake word engine",
+        "placeholder": "auto",
+        "help": "'auto' uses openWakeWord on 64-bit systems and falls back to Porcupine on 32-bit ARM (e.g. Raspberry Pi OS). Or force 'openwakeword'/'porcupine'."
       },
       "wake_word_models": {
         "label": "Custom wake word models",
         "placeholder": "/path/to/model.tflite",
-        "help": "Paths to custom openWakeWord models (.tflite/.onnx), e.g. trained with the openwakeword training notebooks. Leave empty to load all bundled pretrained wake word models (e.g. 'hey jarvis', 'alexa', 'hey mycroft')."
+        "help": "openWakeWord only: built-in wake word names (okay_nabu, hey_jarvis, hey_mycroft, alexa, hey_rhasspy) or paths to custom .tflite models. Leave empty to use all built-in wake words."
       },
       "wake_word_sensitivities": {
         "label": "Wake word sensitivities",
         "placeholder": "0.5",
-        "help": "Detection score thresholds from 0.0 to 1.0 (higher = fewer false accepts, lower = detects at greater distance/noise), one per wake word model in the same order. Missing values default to 0.5."
+        "help": "Detection thresholds (openWakeWord) or sensitivities (Porcupine) from 0.0 to 1.0 (higher = detects at greater distance/noise), one per wake word in the same order. Missing values default to 0.5."
+      },
+      "tts_voice": {
+        "label": "Voice",
+        "placeholder": "en-US-AriaNeural",
+        "help": "The voice nanobot uses to answer (https://edge-tts.com)."
       },
       "audio_device_index": {
         "label": "Audio device index",
@@ -55,6 +60,26 @@
         "label": "Allowed users",
         "placeholder": "local_speaker",
         "help": "Sender IDs that may talk to nanobot. Use 'local_speaker' to allow the person speaking into the local microphone, '*' for everyone."
+      },
+      "picovoice_access_key": {
+        "label": "Picovoice access key",
+        "placeholder": "••••••",
+        "help": "Only needed for the Porcupine engine (32-bit ARM fallback). Obtain a free key from https://console.picovoice.ai."
+      },
+      "porcupine_model": {
+        "label": "Porcupine model (.pv)",
+        "placeholder": "",
+        "help": "Porcupine only: path to the Porcupine speech model file (.pv), e.g. a language-specific model like porcupine_params_de.pv. Leave empty for the default English model."
+      },
+      "wake_word_keywords": {
+        "label": "Wake words (Porcupine)",
+        "placeholder": "jarvis",
+        "help": "Porcupine only: built-in wake word names (e.g. 'jarvis', 'computer', 'terminator'). Only used when no custom wake word paths (.ppn) are set."
+      },
+      "wake_word_keyword_paths": {
+        "label": "Custom wake word paths (.ppn)",
+        "placeholder": "",
+        "help": "Porcupine only: paths to compiled wake word keyword files (.ppn) built in the Picovoice Console. These take precedence over the built-in wake words."
       }
     }
   }

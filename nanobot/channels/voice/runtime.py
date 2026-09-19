@@ -6,7 +6,7 @@ import struct
 import tempfile
 import wave
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import Field
 
@@ -18,13 +18,24 @@ from nanobot.config.schema import Base
 
 try:
     import numpy as np
-    from openwakeword.model import Model
-    from openwakeword.utils import download_models
-    from pvrecorder import PvRecorder
+    from pyopen_wakeword import Model as BuiltinWakeWordModel
+    from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 except ImportError:
     np = None  # type: ignore[assignment]
-    Model = None  # type: ignore[assignment]
-    download_models = None  # type: ignore[assignment]
+    OpenWakeWord = None  # type: ignore[assignment]
+    OpenWakeWordFeatures = None  # type: ignore[assignment]
+    BuiltinWakeWordModel = None  # type: ignore[assignment]
+
+try:
+    import pvporcupine
+except ImportError:
+    # Not available on some platforms (e.g. missing wheels); used as the
+    # wake word engine fallback on 32-bit ARM.
+    pvporcupine = None  # type: ignore[assignment]
+
+try:
+    from pvrecorder import PvRecorder
+except ImportError:
     PvRecorder = None  # type: ignore[assignment]
 
 try:
@@ -44,9 +55,19 @@ class VoiceConfig(Base):
     enabled: bool = False
     allow_from: list[str] = Field(default_factory=list)  # Allowed senders, e.g. ["local_speaker"] or ["*"]
 
-    # Wake word settings (openWakeWord)
-    wake_word_models: list[str] = Field(default_factory=list)  # paths to custom openWakeWord models (.tflite/.onnx); empty = all bundled pretrained models
-    wake_word_sensitivities: list[str] = Field(default_factory=lambda: ["0.5"])  # detection score thresholds, range 0.0 to 1.0
+    # Wake word engine: "auto" prefers openWakeWord and falls back to
+    # Porcupine on platforms without openwakeword wheels (32-bit ARM).
+    wake_word_engine: str = "auto"
+
+    # openWakeWord settings (pyopen-wakeword)
+    wake_word_models: list[str] = Field(default_factory=list)  # built-in names (e.g. "hey_jarvis") or paths to custom .tflite models; empty = all built-in wake words
+    wake_word_sensitivities: list[str] = Field(default_factory=lambda: ["0.5"])  # detection thresholds (openWakeWord) / sensitivities (Porcupine), range 0.0 to 1.0
+
+    # Porcupine settings (only used with wake_word_engine = "porcupine" or the 32-bit ARM fallback)
+    picovoice_access_key: str = ""
+    porcupine_model: str = ""  # path to the Porcupine speech model (.pv), e.g. language-specific; NOT a wake word keyword
+    wake_word_keywords: list[str] = Field(default_factory=lambda: ["nano"])  # built-in keyword names; used only if wake_word_keyword_paths is empty
+    wake_word_keyword_paths: list[str] = Field(default_factory=list)  # paths to custom wake word keywords (.ppn); take precedence over wake_word_keywords
 
     # Audio settings
     audio_device_index: int = 1
@@ -67,7 +88,7 @@ class VoiceChannel(BaseChannel):
     Voice channel using wake word detection.
 
     Flow:
-    1. Listen for wake word (openWakeWord)
+    1. Listen for wake word (openWakeWord, or Porcupine as 32-bit ARM fallback)
     2. Record audio until silence detected
     3. Transcribe with Groq Whisper
     4. Send to agent, get response
@@ -82,7 +103,7 @@ class VoiceChannel(BaseChannel):
 
     @staticmethod
     def _safe_float(val: Any) -> float:
-        """Parse a threshold value; normalize 0-100 input to the 0.0-1.0 range openWakeWord scores use."""
+        """Parse a sensitivity/threshold value; normalize 0-100 input to the 0.0-1.0 range."""
         if isinstance(val, str):
             # Accept comma as decimal separator (e.g. "0,5")
             val = val.replace(",", ".")
@@ -97,8 +118,11 @@ class VoiceChannel(BaseChannel):
             config = VoiceConfig.model_validate(config)
         super().__init__(config, bus)
         self.config: VoiceConfig = config
-        self._model: Any = None
+        self._engine = ""
+        self._features: Any = None
+        self._words: dict[str, Any] = {}
         self._model_thresholds: dict[str, float] = {}
+        self._porcupine: Any = None
         self._frame_length = 1280  # 80 ms of 16 kHz audio, as recommended by openWakeWord
         self._recorder: Any = None
         self._sample_rate = 16000
@@ -106,57 +130,196 @@ class VoiceChannel(BaseChannel):
         if config.led_command:
             self.status_emitter.add_listener(CommandStatusListener(config.led_command))
 
+    def _available_engine(self) -> str:
+        """Return the fully importable wake word engine ("none" if neither is)."""
+        if (
+            OpenWakeWord is not None
+            and OpenWakeWordFeatures is not None
+            and np is not None
+            and BuiltinWakeWordModel is not None
+        ):
+            return "openwakeword"
+        if pvporcupine is not None:
+            return "porcupine"
+        return "none"
+
+    def _resolve_engine(self) -> str:
+        """Resolve the configured engine name, or the empty string on error."""
+        requested = (self.config.wake_word_engine or "auto").strip().lower()
+        if requested == "auto":
+            # "auto" prefers openWakeWord and falls back to Porcupine, which is
+            # the only engine with wheels for 32-bit ARM (e.g. Raspberry Pi OS).
+            available = self._available_engine()
+            if available == "none":
+                self.logger.error(
+                    "Neither openWakeWord nor Porcupine is installed. "
+                    "Run: nanobot plugins enable voice"
+                )
+                return ""
+            return available
+        if requested not in ("openwakeword", "porcupine"):
+            self.logger.error(
+                "Invalid wake_word_engine '{}': use 'auto', 'openwakeword' or 'porcupine'.",
+                requested,
+            )
+            return ""
+        if requested == "openwakeword" and (
+            OpenWakeWord is None or OpenWakeWordFeatures is None or np is None or BuiltinWakeWordModel is None
+        ):
+            self.logger.error(
+                "openWakeWord is not installed; install it or set wake_word_engine to 'auto'."
+            )
+            return ""
+        if requested == "porcupine" and pvporcupine is None:
+            self.logger.error(
+                "Porcupine is not installed; install it or set wake_word_engine to 'auto'."
+            )
+            return ""
+        return requested
+
+    async def _setup_openwakeword(self) -> None:
+        """Initialize the pyopen-wakeword engine and per-model thresholds."""
+        # Shared audio-to-embeddings pipeline (melspectrogram + embedding model
+        # are bundled with the pyopen-wakeword wheel; no download needed).
+        features_cls: Any = OpenWakeWordFeatures
+        self._features = features_cls.from_builtin()
+        builtin_models: Any = BuiltinWakeWordModel
+
+        # Each entry is either a built-in wake word name (e.g. "hey_jarvis")
+        # or a path to a custom .tflite model.
+        builtin = {m.value.lower(): m for m in builtin_models}
+        entries = [e.strip() for e in self.config.wake_word_models if e.strip()]
+        if not entries:
+            entries = [m.value for m in builtin_models]
+
+        word_ids: list[str] = []
+        for entry in entries:
+            if entry.lower().endswith(".tflite"):
+                word_cls: Any = OpenWakeWord
+                word = word_cls.from_model(entry)
+            else:
+                model = builtin.get(entry.lower())
+                if model is None:
+                    raise ValueError(
+                        f"Unknown built-in wake word '{entry}'. "
+                        f"Built-in wake words: {sorted(builtin)}; "
+                        "or provide a path to a custom .tflite model."
+                    )
+                word_cls = OpenWakeWord
+                word = word_cls.from_builtin(model)
+            if word.id in self._words:
+                continue
+            self._words[word.id] = word
+            word_ids.append(word.id)
+
+        sensitivities = self._padded_sensitivities(len(word_ids), "wake word models")
+        self._model_thresholds = dict(zip(word_ids, sensitivities))
+        self.logger.info("Wake word models: {}", self._model_thresholds)
+
+    def _setup_porcupine(self) -> None:
+        """Initialize the Porcupine engine (fallback for 32-bit ARM platforms)."""
+        porcupine: Any = pvporcupine
+        if not self.config.picovoice_access_key:
+            raise ValueError(
+                "Porcupine requires 'picovoice_access_key' "
+                "(obtain one from https://console.picovoice.ai)."
+            )
+
+        model_path: Optional[str] = self.config.porcupine_model.strip() or None
+
+        keyword_paths: Optional[list[str]] = self.config.wake_word_keyword_paths
+        if not keyword_paths or not keyword_paths[0].strip():
+            keyword_paths = None
+
+        keywords: Optional[list[str]] = None
+        if keyword_paths is None:
+            keywords = self.config.wake_word_keywords
+            if not keywords or not keywords[0].strip():
+                raise ValueError(
+                    "Porcupine requires either 'wake_word_keyword_paths' "
+                    "(custom .ppn wake words) or non-empty 'wake_word_keywords'."
+                )
+
+        num_keywords = len(keyword_paths) if keyword_paths is not None else len(keywords or [])
+        sensitivities = self._padded_sensitivities(num_keywords, "keywords")
+
+        self._porcupine = porcupine.create(
+            access_key=self.config.picovoice_access_key,
+            model_path=model_path,
+            keywords=keywords,
+            keyword_paths=keyword_paths,
+            sensitivities=sensitivities,
+        )
+        self._sample_rate = self._porcupine.sample_rate
+        self._frame_length = self._porcupine.frame_length
+        self.logger.info("Porcupine wake words: {}", keyword_paths or keywords)
+
+    def _padded_sensitivities(self, count: int, label: str) -> list[float]:
+        """Normalize the configured sensitivities to one value per item."""
+        sensitivities = [self._safe_float(x) for x in self.config.wake_word_sensitivities]
+        if not sensitivities:
+            sensitivities = [0.5]
+        if len(sensitivities) < count:
+            self.logger.warning(
+                "Number of sensitivities (%d) does not match number of %s (%d); padding with 0.5.",
+                len(sensitivities),
+                label,
+                count,
+            )
+            sensitivities = sensitivities + [0.5] * (count - len(sensitivities))
+        elif len(sensitivities) > count:
+            self.logger.warning(
+                "Number of sensitivities (%d) exceeds number of %s (%d); truncating.",
+                len(sensitivities),
+                label,
+                count,
+            )
+            sensitivities = sensitivities[:count]
+        return sensitivities
+
+    def _reset_openwakeword_state(self) -> None:
+        """Clear stale audio from the openWakeWord buffers."""
+        if self._features is not None:
+            self._features.reset()
+        for word in self._words.values():
+            word.reset()
+
+    def _detect_wake_word(self, pcm: Any) -> bool:
+        """Run one detection step on a recorder frame with the active engine."""
+        if self._engine == "porcupine":
+            assert self._porcupine is not None
+            return self._porcupine.process(pcm) >= 0
+        numpy: Any = np
+        assert self._features is not None and numpy is not None
+        pcm_bytes = numpy.asarray(pcm, dtype=numpy.int16).tobytes()
+        for embeddings in self._features.process_streaming(pcm_bytes):
+            for word in self._words.values():
+                for probability in word.process_streaming(embeddings):
+                    if probability >= self._model_thresholds.get(word.id, 0.5):
+                        return True
+        return False
+
     async def start(self) -> None:
         """Start the voice channel with wake word detection."""
-
-        if Model is None or PvRecorder is None or np is None or download_models is None:
-            self.logger.error(
-                "openWakeWord, PvRecorder or numpy not installed. Run: nanobot plugins enable voice"
-            )
+        engine = self._resolve_engine()
+        if not engine:
             return
         if edge_tts is None:
-            self.logger.error(
-                "Edge TTS not installed. Run: nanobot plugins enable voice"
-            )
+            self.logger.error("Edge TTS not installed. Run: nanobot plugins enable voice")
+            return
+        if PvRecorder is None:
+            self.logger.error("PvRecorder not installed. Run: nanobot plugins enable voice")
             return
 
         self._running = True
-        self.logger.info("Starting voice channel...")
+        self._engine = engine
+        self.logger.info("Starting voice channel (wake word engine: {})...", engine)
 
         try:
-            model_paths = [p.strip() for p in self.config.wake_word_models if p.strip()]
-            if not model_paths:
-                # No custom models: use all bundled pretrained wake words and
-                # make sure they are downloaded (no-op once cached).
-                fetch_models: Any = download_models
-                await asyncio.get_event_loop().run_in_executor(None, fetch_models)
-
-            # Initialize openWakeWord engine (ONNX backend for cross-platform support)
-            self._model = Model(wakeword_models=model_paths, inference_framework="onnx")
-
-            # One entry per parent model (e.g. "hey_jarvis"); scores are returned
-            # per label and mapped back to their parent model for comparison.
-            num_models = len(self._model.models)
-            sensitivities = [self._safe_float(x) for x in self.config.wake_word_sensitivities]
-            if not sensitivities:
-                sensitivities = [0.5]
-            if len(sensitivities) < num_models:
-                self.logger.warning(
-                    "Number of thresholds (%d) does not match number of wake word models (%d); "
-                    "padding with 0.5.",
-                    len(sensitivities),
-                    num_models,
-                )
-                sensitivities = sensitivities + [0.5] * (num_models - len(sensitivities))
-            elif len(sensitivities) > num_models:
-                self.logger.warning(
-                    "Number of thresholds (%d) exceeds number of wake word models (%d); truncating.",
-                    len(sensitivities),
-                    num_models,
-                )
-                sensitivities = sensitivities[:num_models]
-            self._model_thresholds = dict(zip(self._model.models, sensitivities))
-            self.logger.info("Wake word models: {}", self._model_thresholds)
+            if engine == "openwakeword":
+                await self._setup_openwakeword()
+            else:
+                self._setup_porcupine()
 
             # Initialize recorder
             self._recorder = PvRecorder(
@@ -176,18 +339,13 @@ class VoiceChannel(BaseChannel):
                     None, self._recorder.read
                 )
 
-                scores = await asyncio.get_event_loop().run_in_executor(
-                    None, self._model.predict, np.asarray(pcm, dtype=np.int16)
+                detected = await asyncio.get_event_loop().run_in_executor(
+                    None, self._detect_wake_word, pcm
                 )
 
-                if any(
-                    score >= self._model_thresholds.get(
-                        self._model.get_parent_model_from_label(label), ""
-                    )
-                    for label, score in scores.items()
-                ):
-                    # Clear stale audio from the model buffer before recording
-                    self._model.reset()
+                if detected:
+                    # Clear stale audio from the buffers before recording
+                    self._reset_openwakeword_state()
                     self.logger.info("Wake word detected!")
                     await self.status_emitter.emit(VoiceStatus.RECORDING)
                     await self._handle_wake_word()
@@ -209,8 +367,27 @@ class VoiceChannel(BaseChannel):
                 pass
             self._recorder = None
 
-        if self._model:
-            self._model = None
+        if self._porcupine:
+            try:
+                self._porcupine.delete()
+            except Exception:
+                pass
+            self._porcupine = None
+
+        if self._features:
+            try:
+                self._features.close()
+            except Exception:
+                pass
+            self._features = None
+
+        if self._words:
+            for word in self._words.values():
+                try:
+                    word.close()
+                except Exception:
+                    pass
+            self._words = {}
 
         self.logger.info("Voice channel stopped")
 

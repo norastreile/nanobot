@@ -5,6 +5,7 @@ import wave
 
 import pytest
 
+import nanobot.channels.voice.runtime as voice_runtime
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.voice.runtime import SPEAKER_ID, VoiceChannel, VoiceConfig
 from nanobot.channels.voice.status import (
@@ -21,6 +22,7 @@ def make_channel(config: dict | None = None) -> VoiceChannel:
 def test_default_config() -> None:
     defaults = VoiceChannel.default_config()
     assert defaults["enabled"] is False
+    assert defaults["wakeWordEngine"] == "auto"
     assert defaults["wakeWordModels"] == []
     assert defaults["wakeWordSensitivities"] == ["0.5"]
     assert defaults["ttsVoice"] == "en-US-AriaNeural"
@@ -187,3 +189,68 @@ def test_channel_registers_led_listener_from_config() -> None:
     plain = make_channel()
     assert plain.status_emitter._listeners == []
 
+
+
+# --- Wake word engine selection ---
+
+
+def test_resolve_engine_auto_prefers_openwakeword(monkeypatch) -> None:
+    channel = make_channel()
+    assert channel._resolve_engine() == "openwakeword"
+
+
+def test_resolve_engine_auto_falls_back_to_porcupine(monkeypatch) -> None:
+    monkeypatch.setattr(voice_runtime, "OpenWakeWord", None)
+    monkeypatch.setattr(voice_runtime, "OpenWakeWordFeatures", None)
+    monkeypatch.setattr(voice_runtime, "np", None)
+    monkeypatch.setattr(voice_runtime, "BuiltinWakeWordModel", None)
+    if voice_runtime.pvporcupine is None:
+        pytest.skip("pvporcupine not installed")
+    channel = make_channel()
+    assert channel._resolve_engine() == "porcupine"
+
+
+def test_resolve_engine_none_logs_error(monkeypatch, caplog) -> None:
+    monkeypatch.setattr(voice_runtime, "OpenWakeWord", None)
+    monkeypatch.setattr(voice_runtime, "OpenWakeWordFeatures", None)
+    monkeypatch.setattr(voice_runtime, "np", None)
+    monkeypatch.setattr(voice_runtime, "BuiltinWakeWordModel", None)
+    monkeypatch.setattr(voice_runtime, "pvporcupine", None)
+    channel = make_channel()
+    assert channel._resolve_engine() == ""
+
+
+def test_resolve_engine_explicit_porcupine(monkeypatch) -> None:
+    if voice_runtime.pvporcupine is None:
+        pytest.skip("pvporcupine not installed")
+    channel = make_channel({"wakeWordEngine": "porcupine"})
+    assert channel._resolve_engine() == "porcupine"
+
+
+def test_resolve_engine_invalid_value(monkeypatch) -> None:
+    channel = make_channel({"wakeWordEngine": "snowboy"})
+    assert channel._resolve_engine() == ""
+
+
+def test_setup_porcupine_requires_access_key() -> None:
+    if voice_runtime.pvporcupine is None:
+        pytest.skip("pvporcupine not installed")
+    channel = make_channel({"wakeWordEngine": "porcupine"})
+    with pytest.raises(ValueError, match="picovoice_access_key"):
+        channel._setup_porcupine()
+
+
+
+async def test_setup_openwakeword_loads_builtin_models() -> None:
+    if voice_runtime.OpenWakeWord is None:
+        pytest.skip("pyopen-wakeword not installed")
+    channel = make_channel({"wakeWordModels": ["hey_jarvis"]})
+    await channel._setup_openwakeword()
+    assert list(channel._words) == ["hey_jarvis"]
+    assert channel._model_thresholds == {"hey_jarvis": 0.5}
+    # detection on silence must not fire
+    import numpy as np
+
+    assert channel._detect_wake_word(np.zeros(1280, dtype=np.int16)) is False
+    channel._reset_openwakeword_state()
+    channel._features.close()
