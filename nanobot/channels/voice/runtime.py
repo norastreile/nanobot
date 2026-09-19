@@ -59,15 +59,17 @@ class VoiceConfig(Base):
     # Porcupine on platforms without openwakeword wheels (32-bit ARM).
     wake_word_engine: str = "auto"
 
-    # openWakeWord settings (pyopen-wakeword)
-    wake_word_models: list[str] = Field(default_factory=list)  # built-in names (e.g. "hey_jarvis") or paths to custom .tflite models; empty = all built-in wake words
+    # Wake word models, interpreted per engine:
+    # - openwakeword: built-in names (okay_nabu, hey_jarvis, hey_mycroft, alexa,
+    #   hey_rhasspy) or paths to custom .tflite models; empty = all built-in
+    # - porcupine: built-in names (e.g. "jarvis", 19 available, English only)
+    #   or paths to custom .ppn keyword files; empty = error (choose wake words)
+    wake_word_models: list[str] = Field(default_factory=list)
     wake_word_sensitivities: list[str] = Field(default_factory=lambda: ["0.5"])  # detection thresholds (openWakeWord) / sensitivities (Porcupine), range 0.0 to 1.0
 
     # Porcupine settings (only used with wake_word_engine = "porcupine" or the 32-bit ARM fallback)
     picovoice_access_key: str = ""
     porcupine_model: str = ""  # path to the Porcupine speech model (.pv), e.g. language-specific; NOT a wake word keyword
-    wake_word_keywords: list[str] = Field(default_factory=lambda: ["nano"])  # built-in keyword names; used only if wake_word_keyword_paths is empty
-    wake_word_keyword_paths: list[str] = Field(default_factory=list)  # paths to custom wake word keywords (.ppn); take precedence over wake_word_keywords
 
     # Audio settings
     audio_device_index: int = 1
@@ -227,27 +229,38 @@ class VoiceChannel(BaseChannel):
 
         model_path: Optional[str] = self.config.porcupine_model.strip() or None
 
-        keyword_paths: Optional[list[str]] = self.config.wake_word_keyword_paths
-        if not keyword_paths or not keyword_paths[0].strip():
-            keyword_paths = None
+        # Each wake_word_models entry is either a built-in keyword name (e.g.
+        # "jarvis"; English only) or a path to a custom .ppn keyword file.
+        entries = [e.strip() for e in self.config.wake_word_models if e.strip()]
+        if not entries:
+            raise ValueError(
+                "Porcupine requires wake words: set 'wake_word_models' to "
+                "built-in keyword names (e.g. 'jarvis', 'computer', 19 available) "
+                "or paths to custom .ppn keyword files."
+            )
 
-        keywords: Optional[list[str]] = None
-        if keyword_paths is None:
-            keywords = self.config.wake_word_keywords
-            if not keywords or not keywords[0].strip():
-                raise ValueError(
-                    "Porcupine requires either 'wake_word_keyword_paths' "
-                    "(custom .ppn wake words) or non-empty 'wake_word_keywords'."
-                )
+        keyword_paths: list[str] = []
+        for entry in entries:
+            if entry.lower().endswith(".ppn"):
+                if not Path(entry).is_file():
+                    raise ValueError(f"Wake word file not found: {entry}")
+                keyword_paths.append(entry)
+            else:
+                built_in = porcupine.KEYWORD_PATHS.get(entry.lower())
+                if built_in is None:
+                    raise ValueError(
+                        f"Unknown built-in Porcupine keyword '{entry}'. "
+                        f"Built-in keywords: {sorted(porcupine.KEYWORD_PATHS)}; "
+                        "or provide a path to a custom .ppn keyword file."
+                    )
+                keyword_paths.append(str(built_in))
 
-        num_keywords = len(keyword_paths) if keyword_paths is not None else len(keywords or [])
-        sensitivities = self._padded_sensitivities(num_keywords, "keywords")
+        sensitivities = self._padded_sensitivities(len(keyword_paths), "keywords")
 
         try:
             self._porcupine = porcupine.create(
                 access_key=self.config.picovoice_access_key,
                 model_path=model_path,
-                keywords=keywords,
                 keyword_paths=keyword_paths,
                 sensitivities=sensitivities,
             )
@@ -276,7 +289,7 @@ class VoiceChannel(BaseChannel):
             ) from e
         self._sample_rate = self._porcupine.sample_rate
         self._frame_length = self._porcupine.frame_length
-        self.logger.info("Porcupine wake words: {}", keyword_paths or keywords)
+        self.logger.info("Porcupine wake words: {}", keyword_paths)
 
     def _padded_sensitivities(self, count: int, label: str) -> list[float]:
         """Normalize the configured sensitivities to one value per item."""

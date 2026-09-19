@@ -11,12 +11,10 @@ SETUP_SPEC = ChannelSetupSpec(
     fields={
         "tts_voice": field(kind="string", default="en-US-AriaNeural"),
         "wake_word_engine": field(kind="string", choices=("auto", "openwakeword", "porcupine"), default="auto"), # auto = openWakeWord with Porcupine fallback on 32-bit ARM
-        "wake_word_models": field("list"), # paths to custom openWakeWord models (.tflite/.onnx); empty = all bundled pretrained models
+        "wake_word_models": field("list"), # wake words: built-in names (openwakeword: hey_jarvis/...; porcupine: jarvis/...) or custom model paths (.tflite / .ppn)
         "wake_word_sensitivities": field("list", default=["0.5"]), # detection thresholds (openWakeWord) / sensitivities (Porcupine), range 0.0 to 1.0
         "picovoice_access_key": field("secret"), # Picovoice API key, only needed for the Porcupine engine (32-bit ARM fallback)
         "porcupine_model": field("string"), # path to Porcupine speech model .pv file (language/base model), NOT a wake word keyword
-        "wake_word_keywords": field("list", default=["jarvis"]), # built-in Porcupine wake word names; only used when wake_word_keyword_paths is empty
-        "wake_word_keyword_paths": field("list"), # paths to custom Porcupine wake word keywords (.ppn files); take precedence over wake_word_keywords
         "audio_device_index": field(kind="int", default=1),
         "silence_threshold": field(kind="int", default=500),
         "silence_duration": field(kind="int", default=1500), #in milliseconds

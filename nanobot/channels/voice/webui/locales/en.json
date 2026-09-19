@@ -19,7 +19,7 @@
       "wake_word_models": {
         "label": "Custom wake word models",
         "placeholder": "/path/to/model.tflite",
-        "help": "openWakeWord only: built-in wake word names (okay_nabu, hey_jarvis, hey_mycroft, alexa, hey_rhasspy) or paths to custom .tflite models. Leave empty to use all built-in wake words."
+        "help": "Wake words, interpreted per engine. openWakeWord: built-in names (okay_nabu, hey_jarvis, hey_mycroft, alexa, hey_rhasspy) or paths to custom .tflite models; empty = all built-in. Porcupine: built-in keyword names (e.g. 'jarvis', 'computer', 19 available, English only) or paths to custom .ppn keyword files (Picovoice Console); required, not empty."
       },
       "wake_word_sensitivities": {
         "label": "Wake word sensitivities",
@@ -70,16 +70,6 @@
         "label": "Porcupine model (.pv)",
         "placeholder": "",
         "help": "Porcupine only: path to the Porcupine speech model file (.pv), e.g. a language-specific model like porcupine_params_de.pv. Leave empty for the default English model."
-      },
-      "wake_word_keywords": {
-        "label": "Wake words (Porcupine)",
-        "placeholder": "jarvis",
-        "help": "Porcupine only: built-in wake word names (e.g. 'jarvis', 'computer', 'terminator'). Only used when no custom wake word paths (.ppn) are set."
-      },
-      "wake_word_keyword_paths": {
-        "label": "Custom wake word paths (.ppn)",
-        "placeholder": "",
-        "help": "Porcupine only: paths to compiled wake word keyword files (.ppn) built in the Picovoice Console. These take precedence over the built-in wake words."
       }
     }
   }
