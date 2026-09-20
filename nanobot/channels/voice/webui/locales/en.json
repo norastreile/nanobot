@@ -11,47 +11,47 @@
       "Optionally adjust the TTS (text-to-speech) voice (https://edge-tts.com), the wake word settings, the microphone device or add a led command."
     ],
     "fields": {
-      "wake_word_engine": {
+      "wakeWordEngine": {
         "label": "Wake word engine",
         "placeholder": "auto",
         "help": "'auto' uses openWakeWord on 64-bit systems and falls back to Porcupine on 32-bit ARM (e.g. Raspberry Pi OS). Or force 'openwakeword'/'porcupine'."
       },
-      "wake_word_models": {
+      "wakeWordModels": {
         "label": "Custom wake words or models",
         "placeholder": "/path/to/model.tflite",
         "help": "Wake words, interpreted per engine; leave empty to listen for all built-in wake words (both engines). openWakeWord: built-in names (okay_nabu, hey_jarvis, hey_mycroft, alexa, hey_rhasspy) or paths to custom .tflite models. Porcupine (32-bit fallback): built-in keyword names (e.g. 'jarvis', 'computer', 19 available, English only) or paths to custom .ppn keyword files (Picovoice Console)."
       },
-      "wake_word_sensitivities": {
+      "wakeWordSensitivities": {
         "label": "Wake word sensitivities",
         "placeholder": "0.5",
         "help": "Detection thresholds (openWakeWord) or sensitivities (Porcupine) from 0.0 to 1.0 (higher = detects at greater distance/noise), one per wake word in the same order. Missing values default to 0.5."
       },
-      "tts_voice": {
+      "ttsVoice": {
         "label": "Voice",
         "placeholder": "en-US-AriaNeural",
         "help": "The voice nanobot uses to answer (https://edge-tts.com)."
       },
-      "audio_device_index": {
+      "audioDeviceIndex": {
         "label": "Audio device index",
         "placeholder": "1",
         "help": "Index of the microphone device used for recording."
       },
-      "silence_threshold": {
+      "silenceThreshold": {
         "label": "Silence threshold",
         "placeholder": "500",
         "help": "Audio amplitude below which input is considered silence."
       },
-      "silence_duration": {
+      "silenceDuration": {
         "label": "Silence duration",
         "placeholder": "1500",
         "help": "Silence duration in milliseconds before recording stops."
       },
-      "max_recording_duration": {
+      "maxRecordingDuration": {
         "label": "Max recording duration",
         "placeholder": "30",
         "help": "Maximum recording duration in seconds."
       },
-      "led_command": {
+      "ledCommand": {
         "label": "LED status command",
         "placeholder": "",
         "help": "Optional shell command to drive a status LED; receives the status as $1. Possible values: idle, listening_wake_word, recording, thinking, speaking."
@@ -61,7 +61,7 @@
         "placeholder": "voice_user",
         "help": "Sender IDs that may talk to nanobot. Use 'voice_user' to allow the person speaking into the local microphone, '*' for everyone."
       },
-      "porcupine_model": {
+      "porcupineModel": {
         "label": "Porcupine model (.pv)",
         "placeholder": "",
         "help": "Porcupine only: path to the Porcupine speech model file (.pv), e.g. a language-specific model like porcupine_params_de.pv. Leave empty for the default English model."

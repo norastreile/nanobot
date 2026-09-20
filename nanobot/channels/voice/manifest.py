@@ -1,46 +1,49 @@
 """Voice channel management contract."""
 
-import platform
-
 from nanobot.channels._manifest import field, required
 from nanobot.channels.contracts import ChannelSetupSpec
 from nanobot.channels.plugin import ChannelPlugin
+import platform
 
 """Voice Channel configuration."""
 SETUP_SPEC = ChannelSetupSpec(
     fields={
-        "tts_voice": field(kind="string", default="en-US-AriaNeural"),
-        "wake_word_engine": field(kind="string", choices=("auto", "openwakeword", "porcupine"), default="auto"), # auto = openWakeWord with Porcupine fallback on 32-bit ARM
-        "wake_word_models": field("list"), # wake words: built-in names (openwakeword: hey_jarvis/...; porcupine: jarvis/...) or custom model paths (.tflite / .ppn)
-        "wake_word_sensitivities": field("list"), # detection thresholds (openWakeWord) / sensitivities (Porcupine), range 0.0 to 1.0; empty = 0.5 for all wake words
-        "porcupine_model": field("string"), # path to Porcupine speech model .pv file (language/base model), NOT a wake word keyword
-        "audio_device_index": field(kind="int", default=1),
-        "silence_threshold": field(kind="int", default=500),
-        "silence_duration": field(kind="int", default=1500), #in milliseconds
-        "max_recording_duration": field(kind="int", default=30), #in seconds
-        "led_command": field(kind="string"),  # optional status LED shell command, status as $1
+        "ttsVoice": field(kind="string", default="en-US-AriaNeural"),
+        "wakeWordEngine": field(
+            kind="string",
+            choices=("auto", "openwakeword", "porcupine"),
+            default="auto",
+        ),  # auto = openWakeWord with Porcupine fallback on 32-bit ARM
+        "wakeWordModels": field("list"),  # wake words: built-in names (openwakeword: hey_jarvis/...; porcupine: jarvis/...) or custom model paths (.tflite / .ppn)
+        "wakeWordSensitivities": field("list", default=["0.5"]),  # detection thresholds (openWakeWord) / sensitivities (Porcupine), range 0.0 to 1.0
+        "porcupineModel": field("string"),  # path to Porcupine speech model .pv file (language/base model), NOT a wake word keyword
+        "audioDeviceIndex": field(kind="int", default=1),
+        "silenceThreshold": field(kind="int", default=500),
+        "silenceDuration": field(kind="int", default=1500),  # in milliseconds
+        "maxRecordingDuration": field(kind="int", default=30),  # in seconds
+        "ledCommand": field("string"),  # optional status LED shell command, status as $1
         "allowFrom": field("list"),
     },
-    required=(required("tts_voice"),),
+    required=(required("ttsVoice"),),
     official_url="https://github.com/rhasspy/pyopen-wakeword",
 )
 
-# openWakeWord requires onnxruntime/litert, which ship no wheels for 32-bit
-# ARM; Porcupine is the wake word engine fallback there. PEP 508 environment
-# markers cannot be combined with a direct URL reference, so the gating happens
-# at import time (the manifest is evaluated per host).
+# Wake word engine dependencies are gated at manifest import time (the
+# manifest is evaluated per host): openWakeWord requires onnxruntime/litert,
+# which ship no wheels for 32-bit ARM; there Porcupine is the wake word engine
+# fallback (1.9.5 is the last keyless release, no Picovoice registration
+# needed). The platform import lives inside the function because manifests may
+# only import contract modules at module level. Unknown platforms install
+# nothing extra; the channel reports a clear error at start if no engine is
+# importable.
 def _wake_word_dependencies() -> tuple[str, ...]:
     """Wake word engine dependencies for this machine."""
     machine = platform.machine().lower()
     if machine in {"x86_64", "amd64", "aarch64", "arm64"}:
         return ("pyopen-wakeword>=1.1.0,<2",)
     if machine in {"armv7l", "armv6l"}:
-        # 1.9.5 is the last keyless release (no Picovoice registration needed).
         return ("pvporcupine==1.9.5",)
-    # Unknown platform (e.g. Windows ARM): install nothing extra; the channel
-    # reports a clear error at start if no engine is importable.
     return ()
-
 
 _WAKE_WORD_DEPENDENCIES = _wake_word_dependencies()
 
@@ -52,3 +55,4 @@ PLUGIN = ChannelPlugin(
     dependencies=_WAKE_WORD_DEPENDENCIES + ("pvrecorder>=1.2.7,<2.0.0", "edge-tts>=7.2.8,<8.0.0"),
     webui="webui/index.ts",
 )
+
