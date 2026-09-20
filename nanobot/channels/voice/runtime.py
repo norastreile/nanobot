@@ -3,6 +3,7 @@
 
 import asyncio
 import platform
+import shutil
 import struct
 import subprocess
 import sys
@@ -136,7 +137,7 @@ class VoiceChannel(BaseChannel):
     Flow:
     1. Listen for wake word (openWakeWord, or Porcupine as 32-bit ARM fallback)
     2. Record audio until silence detected
-    3. Transcribe with Groq Whisper
+    3. Transcribe with the configured transcription provider
     4. Send to agent, get response
     5. Speak response with Edge TTS
     """
@@ -175,6 +176,20 @@ class VoiceChannel(BaseChannel):
         self.status_emitter = VoiceStatusEmitter()
         if config.led_command:
             self.status_emitter.add_listener(CommandStatusListener(config.led_command))
+
+    @staticmethod
+    def _audio_player_available() -> bool:
+        """Return True when at least one supported TTS playback backend exists.
+
+        ``_speak`` prefers mpv and falls back to ffmpeg plus aplay/paplay.
+        Without any of them responses could never be played aloud, so the
+        channel reports the gap at startup instead of staying silent later.
+        """
+        if shutil.which("mpv"):
+            return True
+        return bool(shutil.which("ffmpeg")) and bool(
+            shutil.which("aplay") or shutil.which("paplay")
+        )
 
     def _available_engine(self) -> str:
         """Return the fully importable wake word engine ("none" if neither is)."""
@@ -380,6 +395,12 @@ class VoiceChannel(BaseChannel):
             return
         if PvRecorder is None:
             self.logger.error("PvRecorder not installed. Run: nanobot plugins enable voice")
+            return
+        if not self._audio_player_available():
+            self.logger.error(
+                "No audio player found for TTS playback. Install mpv, or install "
+                "ffmpeg together with alsa-utils (aplay) or pulseaudio-utils (paplay)."
+            )
             return
 
         self._running = True
@@ -595,12 +616,21 @@ class VoiceChannel(BaseChannel):
                 )
                 await process.wait()
 
-                process = await asyncio.create_subprocess_exec(
-                    "aplay", str(wav_path),
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL
-                )
-                await process.wait()
+                played = False
+                for player in ("aplay", "paplay"):
+                    try:
+                        process = await asyncio.create_subprocess_exec(
+                            player, str(wav_path),
+                            stdout=asyncio.subprocess.DEVNULL,
+                            stderr=asyncio.subprocess.DEVNULL
+                        )
+                    except FileNotFoundError:
+                        continue
+                    await process.wait()
+                    played = True
+                    break
+                if not played:
+                    raise RuntimeError("no 'aplay' or 'paplay' audio player available")
 
                 wav_path.unlink(missing_ok=True)
             except Exception as e:

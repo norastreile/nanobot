@@ -359,3 +359,39 @@ def test_setup_porcupine_unknown_builtin_keyword(monkeypatch, tmp_path) -> None:
     )
     with pytest.raises(ValueError, match="Unknown built-in Porcupine keyword"):
         channel._setup_porcupine()
+
+
+# --- TTS audio playback backend ---
+
+
+def test_audio_player_available_detection(monkeypatch) -> None:
+    cases = [
+        ({"mpv": "/usr/bin/mpv"}, True),
+        ({"ffmpeg": "/usr/bin/ffmpeg", "aplay": "/usr/bin/aplay"}, True),
+        ({"ffmpeg": "/usr/bin/ffmpeg", "paplay": "/usr/bin/paplay"}, True),
+        ({"ffmpeg": "/usr/bin/ffmpeg"}, False),
+        ({"aplay": "/usr/bin/aplay"}, False),
+        ({}, False),
+    ]
+    for installed, expected in cases:
+        monkeypatch.setattr(
+            voice_runtime.shutil,
+            "which",
+            lambda name, _installed=installed: _installed.get(name),
+        )
+        assert VoiceChannel._audio_player_available() is expected, installed
+
+
+async def test_start_aborts_without_audio_player(monkeypatch) -> None:
+    monkeypatch.setattr(voice_runtime.shutil, "which", lambda name: None)
+    monkeypatch.setattr(VoiceChannel, "_resolve_engine", lambda self: "openwakeword")
+    monkeypatch.setattr(voice_runtime, "PvRecorder", object())
+    channel = make_channel()
+    records: list[dict] = []
+    sink_id = logger.add(lambda m: records.append(m.record), level="ERROR")
+    try:
+        await channel.start()
+    finally:
+        logger.remove(sink_id)
+    assert not getattr(channel, "_running", False)
+    assert any("No audio player" in r["message"] for r in records)
