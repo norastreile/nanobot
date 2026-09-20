@@ -21,6 +21,7 @@ export default {
         { key: "channels.voice.silenceThreshold", section: "recording" },
         { key: "channels.voice.silenceDuration", section: "recording" },
         { key: "channels.voice.maxRecordingDuration", section: "recording" },
+        { key: "channels.voice.ledCommand", section: "status" },
         { key: "channels.voice.allowFrom", section: "access" },
       ],
     },
