@@ -3,7 +3,6 @@
 from nanobot.channels._manifest import field, required
 from nanobot.channels.contracts import ChannelSetupSpec
 from nanobot.channels.plugin import ChannelPlugin
-import platform
 
 """Voice Channel configuration."""
 SETUP_SPEC = ChannelSetupSpec(
@@ -38,6 +37,8 @@ SETUP_SPEC = ChannelSetupSpec(
 # importable.
 def _wake_word_dependencies() -> tuple[str, ...]:
     """Wake word engine dependencies for this machine."""
+    import platform
+
     machine = platform.machine().lower()
     if machine in {"x86_64", "amd64", "aarch64", "arm64"}:
         return ("pyopen-wakeword>=1.1.0,<2",)
