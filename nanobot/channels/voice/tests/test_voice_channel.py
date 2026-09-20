@@ -256,14 +256,26 @@ async def test_setup_openwakeword_loads_builtin_models() -> None:
     channel._features.close()
 
 
-def test_setup_porcupine_requires_wake_words(monkeypatch) -> None:
+def test_setup_porcupine_empty_wake_words_uses_all_builtin(monkeypatch) -> None:
     if voice_runtime.pvporcupine is None:
         pytest.skip("pvporcupine not installed")
     # simulate the keyless pvporcupine 1.9.5 (as installed on 32-bit ARM)
     monkeypatch.setattr(voice_runtime, "_porcupine_requires_access_key", lambda m: False)
+    captured: dict = {}
+
+    class FakePorcupine:
+        sample_rate = 16000
+        frame_length = 512
+
+    def fake_create(**kwargs):
+        captured.update(kwargs)
+        return FakePorcupine()
+
+    monkeypatch.setattr(voice_runtime.pvporcupine, "create", fake_create)
     channel = make_channel({"wakeWordEngine": "porcupine"})
-    with pytest.raises(ValueError, match="wake_word_models"):
-        channel._setup_porcupine()
+    channel._setup_porcupine()
+    assert len(captured["keyword_paths"]) == len(voice_runtime.pvporcupine.KEYWORD_PATHS)
+    assert len(captured["sensitivities"]) == len(captured["keyword_paths"])
 
 
 def test_setup_porcupine_resolves_builtin_and_ppn(monkeypatch, tmp_path) -> None:

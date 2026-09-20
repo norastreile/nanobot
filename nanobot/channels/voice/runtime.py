@@ -275,31 +275,29 @@ class VoiceChannel(BaseChannel):
 
         model_path: Optional[str] = self.config.porcupine_model.strip() or None
 
-        # Each wake_word_models entry is either a built-in keyword name (e.g.
-        # "jarvis"; English only) or a path to a custom .ppn keyword file.
+        keyword_paths: list[str] = []
         entries = [e.strip() for e in self.config.wake_word_models if e.strip()]
         if not entries:
-            raise ValueError(
-                "Porcupine requires wake words: set 'wake_word_models' to "
-                "built-in keyword names (e.g. 'jarvis', 'computer', 19 available) "
-                "or paths to custom .ppn keyword files."
-            )
-
-        keyword_paths: list[str] = []
-        for entry in entries:
-            if entry.lower().endswith(".ppn"):
-                if not Path(entry).is_file():
-                    raise ValueError(f"Wake word file not found: {entry}")
-                keyword_paths.append(entry)
-            else:
-                built_in = porcupine.KEYWORD_PATHS.get(entry.lower())
-                if built_in is None:
-                    raise ValueError(
-                        f"Unknown built-in Porcupine keyword '{entry}'. "
-                        f"Built-in keywords: {sorted(porcupine.KEYWORD_PATHS)}; "
-                        "or provide a path to a custom .ppn keyword file."
-                    )
-                keyword_paths.append(str(built_in))
+            # No wake words configured: listen for all built-in keywords
+            # (English only), consistent with the openwakeword engine.
+            keyword_paths = [str(p) for p in porcupine.KEYWORD_PATHS.values()]
+        else:
+            # Each entry is either a built-in keyword name (e.g. "jarvis";
+            # English only) or a path to a custom .ppn keyword file.
+            for entry in entries:
+                if entry.lower().endswith(".ppn"):
+                    if not Path(entry).is_file():
+                        raise ValueError(f"Wake word file not found: {entry}")
+                    keyword_paths.append(entry)
+                else:
+                    built_in = porcupine.KEYWORD_PATHS.get(entry.lower())
+                    if built_in is None:
+                        raise ValueError(
+                            f"Unknown built-in Porcupine keyword '{entry}'. "
+                            f"Built-in keywords: {sorted(porcupine.KEYWORD_PATHS)}; "
+                            "or provide a path to a custom .ppn keyword file."
+                        )
+                    keyword_paths.append(str(built_in))
 
         sensitivities = self._padded_sensitivities(len(keyword_paths), "keywords")
 

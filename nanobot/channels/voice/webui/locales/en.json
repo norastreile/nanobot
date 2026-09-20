@@ -17,9 +17,9 @@
         "help": "'auto' uses openWakeWord on 64-bit systems and falls back to Porcupine on 32-bit ARM (e.g. Raspberry Pi OS). Or force 'openwakeword'/'porcupine'."
       },
       "wake_word_models": {
-        "label": "Custom wake word models",
+        "label": "Custom wake words or models",
         "placeholder": "/path/to/model.tflite",
-        "help": "Wake words, interpreted per engine. openWakeWord: built-in names (okay_nabu, hey_jarvis, hey_mycroft, alexa, hey_rhasspy) or paths to custom .tflite models; empty = all built-in. Porcupine (32-bit fallback): built-in keyword names (e.g. 'jarvis', 'computer', 19 available, English only) or paths to custom .ppn keyword files (Picovoice Console); required, not empty."
+        "help": "Wake words, interpreted per engine; leave empty to listen for all built-in wake words (both engines). openWakeWord: built-in names (okay_nabu, hey_jarvis, hey_mycroft, alexa, hey_rhasspy) or paths to custom .tflite models. Porcupine (32-bit fallback): built-in keyword names (e.g. 'jarvis', 'computer', 19 available, English only) or paths to custom .ppn keyword files (Picovoice Console)."
       },
       "wake_word_sensitivities": {
         "label": "Wake word sensitivities",
