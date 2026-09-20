@@ -45,7 +45,7 @@ def _import_pvporcupine() -> Any:
     the lines the old detector expects, based on /proc/device-tree/model.
     """
     try:
-        import pvporcupine
+        import pvporcupine  # pyright: ignore[reportMissingImports]
         return pvporcupine
     except ImportError:
         return None
@@ -68,7 +68,7 @@ def _import_pvporcupine() -> Any:
         original_check_output = subprocess.check_output
         subprocess.check_output = lambda *args, **kwargs: fake_cpuinfo  # type: ignore[assignment]
         try:
-            import pvporcupine
+            import pvporcupine  # pyright: ignore[reportMissingImports]
             return pvporcupine
         except Exception:
             return None
