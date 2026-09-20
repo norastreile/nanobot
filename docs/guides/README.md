@@ -29,6 +29,7 @@ Use **Settings → Channels** in the WebUI for guided setup. These guides explai
 | Connect Email | [Email AI agent](./email-ai-agent.md) |
 | Connect Mattermost | [Mattermost AI agent](./mattermost-ai-agent.md) |
 | Connect Linear | [Native Linear agent](./linear-agent.md) |
+| Connect Voice | [Voice AI agent](./voice-ai-agent.md) |
 
 ## Integrate from Code
 
