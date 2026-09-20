@@ -110,7 +110,7 @@ class VoiceConfig(Base):
     # - porcupine: built-in names (e.g. "jarvis", 19 available, English only)
     #   or paths to custom .ppn keyword files; empty = error (choose wake words)
     wake_word_models: list[str] = Field(default_factory=list)
-    wake_word_sensitivities: list[str] = Field(default_factory=lambda: ["0.5"])  # detection thresholds (openWakeWord) / sensitivities (Porcupine), range 0.0 to 1.0
+    wake_word_sensitivities: list[str] = Field(default_factory=list)  # detection thresholds (openWakeWord) / sensitivities (Porcupine), range 0.0 to 1.0; empty = 0.5 for all wake words
 
     # Porcupine settings (only used with wake_word_engine = "porcupine" or the 32-bit ARM fallback)
     porcupine_model: str = ""  # path to the Porcupine speech model (.pv), e.g. language-specific; NOT a wake word keyword
@@ -287,10 +287,9 @@ class VoiceChannel(BaseChannel):
             # (English only), consistent with the openwakeword engine.
             keyword_paths = [str(p) for p in porcupine.KEYWORD_PATHS.values()]
             keyword_names = sorted(porcupine.KEYWORD_PATHS)
-            self.logger.info(
-                "No wake words configured - listening for all built-in Porcupine keywords (say one of): {}",
-                ", ".join(keyword_names),
-            )
+            # The full keyword list is logged once below, after the engine is
+            # created.
+            self.logger.info("No wake words configured - listening for all built-in Porcupine keywords.")
         else:
             # Each entry is either a built-in keyword name (e.g. "jarvis";
             # English only) or a path to a custom .ppn keyword file.
@@ -324,26 +323,30 @@ class VoiceChannel(BaseChannel):
 
     def _padded_sensitivities(self, count: int, label: str) -> list[float]:
         """Normalize the configured sensitivities to one value per item."""
-        sensitivities = [self._safe_float(x) for x in self.config.wake_word_sensitivities]
-        if not sensitivities:
-            sensitivities = [0.5]
-        if len(sensitivities) < count:
-            self.logger.warning(
-                "Number of sensitivities (%d) does not match number of %s (%d); padding with 0.5.",
-                len(sensitivities),
+        configured = [self._safe_float(x) for x in self.config.wake_word_sensitivities]
+        if not configured:
+            # Nothing configured: use the documented default (0.5) for every
+            # item, silently.
+            return [0.5] * count
+        if len(configured) < count:
+            # Partial configuration is expected to be padded with the default
+            # value, so this is informational rather than a misconfiguration.
+            self.logger.debug(
+                "Number of sensitivities ({}) does not match number of {} ({}); padding with 0.5.",
+                len(configured),
                 label,
                 count,
             )
-            sensitivities = sensitivities + [0.5] * (count - len(sensitivities))
-        elif len(sensitivities) > count:
+            return configured + [0.5] * (count - len(configured))
+        if len(configured) > count:
             self.logger.warning(
-                "Number of sensitivities (%d) exceeds number of %s (%d); truncating.",
-                len(sensitivities),
+                "Number of sensitivities ({}) exceeds number of {} ({}); truncating.",
+                len(configured),
                 label,
                 count,
             )
-            sensitivities = sensitivities[:count]
-        return sensitivities
+            return configured[:count]
+        return configured
 
     def _reset_openwakeword_state(self) -> None:
         """Clear stale audio from the openWakeWord buffers."""

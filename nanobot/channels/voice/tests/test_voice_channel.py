@@ -4,6 +4,7 @@ import asyncio
 import wave
 
 import pytest
+from loguru import logger
 
 import nanobot.channels.voice.runtime as voice_runtime
 from nanobot.bus.queue import MessageBus
@@ -24,7 +25,7 @@ def test_default_config() -> None:
     assert defaults["enabled"] is False
     assert defaults["wakeWordEngine"] == "auto"
     assert defaults["wakeWordModels"] == []
-    assert defaults["wakeWordSensitivities"] == ["0.5"]
+    assert defaults["wakeWordSensitivities"] == []
     assert defaults["ttsVoice"] == "en-US-AriaNeural"
     assert defaults["silenceDuration"] == 1500
 
@@ -54,6 +55,40 @@ def test_safe_float_normalizes_percent_values() -> None:
     # invalid input falls back to 0.5
     assert VoiceChannel._safe_float("not-a-number") == 0.5
     assert VoiceChannel._safe_float(None) == 0.5
+
+
+def test_padded_sensitivities_defaults_are_silent() -> None:
+    channel = make_channel({})
+    # nothing configured: fill with the default 0.5, without a warning
+    records: list[dict] = []
+    sink_id = logger.add(lambda m: records.append(m.record), level="WARNING")
+    try:
+        assert channel._padded_sensitivities(3, "keywords") == [0.5, 0.5, 0.5]
+    finally:
+        logger.remove(sink_id)
+    assert not records
+
+
+def test_padded_sensitivities_partial_config_pads_without_warning() -> None:
+    channel = make_channel({"wake_word_sensitivities": ["0.7"]})
+    records: list[dict] = []
+    sink_id = logger.add(lambda m: records.append(m.record), level="WARNING")
+    try:
+        assert channel._padded_sensitivities(3, "keywords") == [0.7, 0.5, 0.5]
+    finally:
+        logger.remove(sink_id)
+    assert not records
+
+
+def test_padded_sensitivities_excess_config_truncates_with_warning() -> None:
+    channel = make_channel({"wake_word_sensitivities": ["0.7", "0.6", "0.9"]})
+    records: list[dict] = []
+    sink_id = logger.add(lambda m: records.append(m.record), level="WARNING")
+    try:
+        assert channel._padded_sensitivities(2, "keywords") == [0.7, 0.6]
+    finally:
+        logger.remove(sink_id)
+    assert any("exceeds number of keywords" in r["message"] for r in records)
 
 
 def test_save_wav(tmp_path) -> None:
