@@ -91,14 +91,14 @@ except ImportError:
 # Identity of the person speaking into the local microphone. Used as
 # sender_id for inbound messages so allowFrom can grant access to "the
 # person at the device" without a real user ID.
-SPEAKER_ID = "local_speaker"
+SPEAKER_ID = "voice_user"
 
 
 class VoiceConfig(Base):
     """Voice Channel configuration."""
 
     enabled: bool = False
-    allow_from: list[str] = Field(default_factory=list)  # Allowed senders, e.g. ["local_speaker"] or ["*"]
+    allow_from: list[str] = Field(default_factory=list)  # Allowed senders, e.g. ["voice_user"] or ["*"]
 
     # Wake word engine: "auto" prefers openWakeWord and falls back to
     # Porcupine on platforms without openwakeword wheels (32-bit ARM).

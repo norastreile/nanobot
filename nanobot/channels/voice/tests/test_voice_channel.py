@@ -88,7 +88,7 @@ def test_is_allowed_uses_allow_from() -> None:
 
 
 def test_inbound_message_uses_speaker_id() -> None:
-    assert SPEAKER_ID == "local_speaker"
+    assert SPEAKER_ID == "voice_user"
 
 
 # --- TTS tests (skipped when edge-tts is not installed or offline) ---

@@ -58,8 +58,8 @@
       },
       "allowFrom": {
         "label": "Allowed users",
-        "placeholder": "local_speaker",
-        "help": "Sender IDs that may talk to nanobot. Use 'local_speaker' to allow the person speaking into the local microphone, '*' for everyone."
+        "placeholder": "voice_user",
+        "help": "Sender IDs that may talk to nanobot. Use 'voice_user' to allow the person speaking into the local microphone, '*' for everyone."
       },
       "porcupine_model": {
         "label": "Porcupine model (.pv)",
