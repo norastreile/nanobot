@@ -54,7 +54,7 @@
       "led_command": {
         "label": "LED status command",
         "placeholder": "",
-        "help": "Optional shell command to drive a status LED; receives the status as $1."
+        "help": "Optional shell command to drive a status LED; receives the status as $1. Possible values: idle, listening_wake_word, recording, thinking, speaking."
       },
       "allowFrom": {
         "label": "Allowed users",
