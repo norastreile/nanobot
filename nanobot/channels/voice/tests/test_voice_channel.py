@@ -232,11 +232,11 @@ def test_resolve_engine_invalid_value(monkeypatch) -> None:
     assert channel._resolve_engine() == ""
 
 
-def test_setup_porcupine_requires_access_key() -> None:
+def test_setup_porcupine_rejects_pvporcupine_2() -> None:
     if voice_runtime.pvporcupine is None:
         pytest.skip("pvporcupine not installed")
     channel = make_channel({"wakeWordEngine": "porcupine"})
-    with pytest.raises(ValueError, match="picovoice_access_key"):
+    with pytest.raises(ValueError, match="pvporcupine==1.9.5"):
         channel._setup_porcupine()
 
 
@@ -256,10 +256,12 @@ async def test_setup_openwakeword_loads_builtin_models() -> None:
     channel._features.close()
 
 
-def test_setup_porcupine_requires_wake_words() -> None:
+def test_setup_porcupine_requires_wake_words(monkeypatch) -> None:
     if voice_runtime.pvporcupine is None:
         pytest.skip("pvporcupine not installed")
-    channel = make_channel({"wakeWordEngine": "porcupine", "picovoiceAccessKey": "k"})
+    # simulate the keyless pvporcupine 1.9.5 (as installed on 32-bit ARM)
+    monkeypatch.setattr(voice_runtime, "_porcupine_requires_access_key", lambda m: False)
+    channel = make_channel({"wakeWordEngine": "porcupine"})
     with pytest.raises(ValueError, match="wake_word_models"):
         channel._setup_porcupine()
 
@@ -267,6 +269,7 @@ def test_setup_porcupine_requires_wake_words() -> None:
 def test_setup_porcupine_resolves_builtin_and_ppn(monkeypatch, tmp_path) -> None:
     if voice_runtime.pvporcupine is None:
         pytest.skip("pvporcupine not installed")
+    monkeypatch.setattr(voice_runtime, "_porcupine_requires_access_key", lambda m: False)
     captured: dict = {}
 
     class FakePorcupine:
@@ -284,11 +287,12 @@ def test_setup_porcupine_resolves_builtin_and_ppn(monkeypatch, tmp_path) -> None
     channel = make_channel(
         {
             "wakeWordEngine": "porcupine",
-            "picovoiceAccessKey": "k",
             "wakeWordModels": ["JARVIS", str(ppn)],
         }
     )
     channel._setup_porcupine()
+    # keyless pvporcupine 1.9.5: no access_key may be passed
+    assert "access_key" not in captured
     keyword_paths = captured["keyword_paths"]
     assert len(keyword_paths) == 2
     assert keyword_paths[0].endswith("jarvis_linux.ppn")
@@ -296,13 +300,13 @@ def test_setup_porcupine_resolves_builtin_and_ppn(monkeypatch, tmp_path) -> None
     assert channel._frame_length == 512
 
 
-def test_setup_porcupine_unknown_builtin_keyword(tmp_path) -> None:
+def test_setup_porcupine_unknown_builtin_keyword(monkeypatch, tmp_path) -> None:
     if voice_runtime.pvporcupine is None:
         pytest.skip("pvporcupine not installed")
+    monkeypatch.setattr(voice_runtime, "_porcupine_requires_access_key", lambda m: False)
     channel = make_channel(
         {
             "wakeWordEngine": "porcupine",
-            "picovoiceAccessKey": "k",
             "wakeWordModels": ["nosuchkeyword"],
         }
     )

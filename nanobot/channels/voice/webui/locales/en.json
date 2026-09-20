@@ -19,7 +19,7 @@
       "wake_word_models": {
         "label": "Custom wake word models",
         "placeholder": "/path/to/model.tflite",
-        "help": "Wake words, interpreted per engine. openWakeWord: built-in names (okay_nabu, hey_jarvis, hey_mycroft, alexa, hey_rhasspy) or paths to custom .tflite models; empty = all built-in. Porcupine: built-in keyword names (e.g. 'jarvis', 'computer', 19 available, English only) or paths to custom .ppn keyword files (Picovoice Console); required, not empty."
+        "help": "Wake words, interpreted per engine. openWakeWord: built-in names (okay_nabu, hey_jarvis, hey_mycroft, alexa, hey_rhasspy) or paths to custom .tflite models; empty = all built-in. Porcupine (32-bit fallback): built-in keyword names (e.g. 'jarvis', 'computer', 19 available, English only) or paths to custom .ppn keyword files (Picovoice Console); required, not empty."
       },
       "wake_word_sensitivities": {
         "label": "Wake word sensitivities",
@@ -60,11 +60,6 @@
         "label": "Allowed users",
         "placeholder": "local_speaker",
         "help": "Sender IDs that may talk to nanobot. Use 'local_speaker' to allow the person speaking into the local microphone, '*' for everyone."
-      },
-      "picovoice_access_key": {
-        "label": "Picovoice access key",
-        "placeholder": "••••••",
-        "help": "Only needed for the Porcupine engine (32-bit ARM fallback). Obtain a free key from https://console.picovoice.ai."
       },
       "porcupine_model": {
         "label": "Porcupine model (.pv)",

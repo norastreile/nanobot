@@ -2,7 +2,10 @@
 """Voice channel with wake word detection for local microphone/speaker interaction."""
 
 import asyncio
+import platform
 import struct
+import subprocess
+import sys
 import tempfile
 import wave
 from pathlib import Path
@@ -26,12 +29,54 @@ except ImportError:
     OpenWakeWordFeatures = None  # type: ignore[assignment]
     BuiltinWakeWordModel = None  # type: ignore[assignment]
 
-try:
-    import pvporcupine
-except ImportError:
-    # Not available on some platforms (e.g. missing wheels); used as the
-    # wake word engine fallback on 32-bit ARM.
-    pvporcupine = None  # type: ignore[assignment]
+
+def _porcupine_requires_access_key(pvporcupine_module: Any) -> bool:
+    """Access keys were introduced in pvporcupine 2.0; 1.9.5 is keyless."""
+    return hasattr(pvporcupine_module, "PorcupineActivationError")
+
+
+def _import_pvporcupine() -> Any:
+    """Import pvporcupine, tolerating 1.9.x CPU detection on modern kernels.
+
+    pvporcupine 1.9.x (used on 32-bit ARM) parses the
+    'Hardware'/'model name' lines of /proc/cpuinfo at import time to select
+    the Raspberry Pi library. Modern kernels no longer write these lines,
+    so the import would crash with IndexError. In that case we synthesize
+    the lines the old detector expects, based on /proc/device-tree/model.
+    """
+    try:
+        import pvporcupine
+        return pvporcupine
+    except ImportError:
+        return None
+    except Exception:
+        if not (sys.platform.startswith("linux") and platform.machine().startswith("arm")):
+            return None
+        try:
+            with open("/proc/device-tree/model", encoding="utf-8") as f:
+                model = f.read().strip("\x00\n")
+        except OSError:
+            model = ""
+        if any(x in model for x in ("Pi 4", "Pi 5", "Pi 400", "Compute Module 4")):
+            rev = "rev 3"  # -> cortex-a72 (Pi 4 / Pi 5)
+        else:
+            rev = "rev 4"  # -> cortex-a53 (Pi 3, Zero 2, ...)
+        fake_cpuinfo = (
+            f"Hardware\t: BCM2711\n"
+            f"model name\t: ARMv7 Processor {rev}\n"
+        ).encode()
+        original_check_output = subprocess.check_output
+        subprocess.check_output = lambda *args, **kwargs: fake_cpuinfo  # type: ignore[assignment]
+        try:
+            import pvporcupine
+            return pvporcupine
+        except Exception:
+            return None
+        finally:
+            subprocess.check_output = original_check_output
+
+
+pvporcupine = _import_pvporcupine()
 
 try:
     from pvrecorder import PvRecorder
@@ -68,7 +113,6 @@ class VoiceConfig(Base):
     wake_word_sensitivities: list[str] = Field(default_factory=lambda: ["0.5"])  # detection thresholds (openWakeWord) / sensitivities (Porcupine), range 0.0 to 1.0
 
     # Porcupine settings (only used with wake_word_engine = "porcupine" or the 32-bit ARM fallback)
-    picovoice_access_key: str = ""
     porcupine_model: str = ""  # path to the Porcupine speech model (.pv), e.g. language-specific; NOT a wake word keyword
 
     # Audio settings
@@ -219,12 +263,14 @@ class VoiceChannel(BaseChannel):
         self.logger.info("Wake word models: {}", self._model_thresholds)
 
     def _setup_porcupine(self) -> None:
-        """Initialize the Porcupine engine (fallback for 32-bit ARM platforms)."""
+        """Initialize the Porcupine engine (fallback for 32-bit ARM)."""
         porcupine: Any = pvporcupine
-        if not self.config.picovoice_access_key:
+        assert porcupine is not None
+        if _porcupine_requires_access_key(porcupine):
             raise ValueError(
-                "Porcupine requires 'picovoice_access_key' "
-                "(obtain one from https://console.picovoice.ai)."
+                "pvporcupine >= 2.0 requires a Picovoice access key. "
+                "Install the keyless pvporcupine==1.9.5 "
+                "or use wake_word_engine='openwakeword'."
             )
 
         model_path: Optional[str] = self.config.porcupine_model.strip() or None
@@ -257,36 +303,11 @@ class VoiceChannel(BaseChannel):
 
         sensitivities = self._padded_sensitivities(len(keyword_paths), "keywords")
 
-        try:
-            self._porcupine = porcupine.create(
-                access_key=self.config.picovoice_access_key,
-                model_path=model_path,
-                keyword_paths=keyword_paths,
-                sensitivities=sensitivities,
-            )
-        except porcupine.PorcupineActivationRefusedError as e:
-            raise ValueError(
-                "Picovoice refused the access key. Common causes: the key is "
-                "invalid/expired, it was created for a different platform "
-                "(create a new key with platform 'Python' in "
-                "https://console.picovoice.ai), or the key has been revoked."
-            ) from e
-        except porcupine.PorcupineActivationLimitError as e:
-            raise ValueError(
-                "Picovoice activation limit reached for this access key "
-                "(free tier allows only a few active devices). Remove old "
-                "devices in https://console.picovoice.ai or create a new key."
-            ) from e
-        except porcupine.PorcupineActivationThrottledError as e:
-            raise ValueError(
-                "Picovoice throttled activation attempts for this access key; "
-                "wait a moment and try again."
-            ) from e
-        except porcupine.PorcupineKeyError as e:
-            raise ValueError(
-                "The Picovoice access key is malformed; copy it again from "
-                "https://console.picovoice.ai without quotes or whitespace."
-            ) from e
+        self._porcupine = porcupine.create(
+            model_path=model_path,
+            keyword_paths=keyword_paths,
+            sensitivities=sensitivities,
+        )
         self._sample_rate = self._porcupine.sample_rate
         self._frame_length = self._porcupine.frame_length
         self.logger.info("Porcupine wake words: {}", keyword_paths)
