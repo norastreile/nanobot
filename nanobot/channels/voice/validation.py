@@ -37,35 +37,9 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
     checks, missing = required_checks("voice", values)
     logger.info("Received checks: {}", checks)
 
-    raw_sensitivities = cast("list[Any]", values.get("wakeWordSensitivities") or [])
-    sensitivities = [
-        string_value(value) for value in raw_sensitivities if string_value(value)
-    ]
-    invalid = [value for value in sensitivities if not _sensitivity_ok(value)]
-    if invalid:
-        checks.append(
-            check(
-                "sensitivities",
-                "Wake word sensitivities",
-                "fail",
-                "Not a valid sensitivity (0.0 to 1.0, comma accepted): " + ", ".join(invalid),
-            )
-        )
-    elif sensitivities:
-        checks.append(
-            check("sensitivities", "Wake word sensitivities", "pass", "All sensitivities parse.")
-        )
-    else:
-        checks.append(
-            check(
-                "sensitivities",
-                "Wake word sensitivities",
-                "skipped",
-                "Unset; every wake word uses 0.5.",
-            )
-        )
-
-    return status_from_checks("voice", checks, missing)
+    result = status_from_checks("voice", checks, missing)
+    logger.info("Validation result: {}", result)
+    return result
 
 
 __all__ = ["validate"]
