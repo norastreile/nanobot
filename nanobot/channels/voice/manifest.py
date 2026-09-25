@@ -26,6 +26,7 @@ SETUP_SPEC = ChannelSetupSpec(
     required=(required("ttsVoice"),),
     official_url="https://github.com/rhasspy/pyopen-wakeword",
     validator=validate,
+    verifies_connection=True,
 )
 
 # Wake word engine dependencies are gated at manifest import time (the

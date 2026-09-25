@@ -32,7 +32,7 @@ def _sensitivity_ok(value: Any) -> bool:
 
 def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict[str, Any]:
 
-    logger.info("Starting Voice checks")
+    logger.info("Starting Voice checks using values: {}", values)
     
     checks, missing = required_checks("voice", values)
     logger.info("Received checks: {}", checks)
