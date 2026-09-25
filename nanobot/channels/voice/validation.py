@@ -1,35 +1,29 @@
-"""Voice setup validation owned by the channel package.
+"""Validate Voice setup fields and dependencies without starting the channel.
 
-Validation is static and dependency-free on purpose: optional wake word and
-TTS modules are detected via ``importlib.util.find_spec`` (no heavy imports),
-playback backends via ``shutil.which``, and custom model files via
-``Path.is_file()`` on the gateway host. Anything that touches audio hardware
-is deferred to channel startup and reported as a skipped check.
+Checks recorder availability, the configured Edge TTS voice, and an optional
+non-negative audio device index. Microphone hardware and wake-word models are
+not inspected here; those are handled by the runtime when the channel starts.
 """
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
-import platform
-import shutil
-from pathlib import Path
+import inspect
+from threading import Thread
 from typing import Any, cast
 
 from nanobot.channels.contracts import ChannelValidationContext
 from nanobot.channels.validation import (
     check,
-    int_value,
     required_checks,
     status_from_checks,
     string_value,
 )
+from loguru import logger
 
-_ENGINE_MODULES = {
-    "openwakeword": ("pyopen_wakeword", "numpy"),
-    "porcupine": ("pvporcupine",),
-}
-_ENGINE_LABELS = {"openwakeword": "openWakeWord", "porcupine": "Porcupine"}
 _ENABLE_HINT = "Run: nanobot plugins enable voice."
+_DEFAULT_TTS_VOICE = "en-US-AriaNeural"
 
 
 def _module_available(module: str) -> bool:
@@ -37,69 +31,133 @@ def _module_available(module: str) -> bool:
     return importlib.util.find_spec(module) is not None
 
 
-def _auto_engines() -> tuple[str, ...]:
-    """Engines the manifest would install on this machine, in preference order."""
-    machine = platform.machine().lower()
-    if machine in {"armv7l", "armv6l"}:
-        # openWakeWord ships no wheels for 32-bit ARM; Porcupine is the fallback.
-        return ("porcupine",)
-    return ("openwakeword", "porcupine")
+def _await_if_needed(value: Any) -> Any:
+    """Run awaitable values safely from a synchronous validation entrypoint."""
+    if not inspect.isawaitable(value):
+        return value
 
-
-def _sensitivity_ok(value: Any) -> bool:
-    """Mirror the runtime normalization: 0.0-1.0, or 0-100 scaled down."""
     try:
-        return float(string_value(value).replace(",", ".")) >= 0
-    except ValueError:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(value)
+
+    result: dict[str, Any] = {}
+
+    def runner() -> None:
+        result["value"] = asyncio.run(value)
+
+    thread = Thread(target=runner)
+    thread.start()
+    thread.join()
+    return result.get("value")
+
+
+def _edge_tts_voice_exists(voice_name: str) -> bool:
+    """Return whether the configured Edge TTS voice exists in the current library."""
+    if not _module_available("edge_tts"):
+        return False
+
+    try:
+        import edge_tts
+
+        voices = _await_if_needed(edge_tts.list_voices())
+        if not isinstance(voices, list):
+            return False
+        for voice in voices:
+            name = voice.get("ShortName") or voice.get("Name")
+            if name == voice_name:
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def _audio_device_index_ok(value: Any) -> bool:
+    """Return whether the optional device index is a non-negative integer."""
+    if value is None or value == "":
+        return True
+    try:
+        return int(value) >= 0
+    except (TypeError, ValueError):
         return False
 
 
 def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict[str, Any]:
-    checks, missing = required_checks("voice", values)
 
-    requested = string_value(values.get("wakeWordEngine")).lower() or "auto"
-    if requested != "auto" and requested not in _ENGINE_MODULES:
+    logger.debug("Starting Voice checks using values: {}", values)
+    
+    validation_values = dict(values)
+    validation_values.setdefault("ttsVoice", _DEFAULT_TTS_VOICE)
+    checks, missing = required_checks("voice", validation_values)
+
+    voice_name = string_value(validation_values.get("ttsVoice"))
+    if not _module_available("edge_tts"):
+        logger.info("Validation failed: Edge TTS package is not installed.")
         checks.append(
             check(
-                "engine",
-                "Wake word engine",
+                "tts_voice",
+                "Edge TTS voice",
                 "fail",
-                f"Invalid wakeWordEngine '{requested}': use 'auto', 'openwakeword' or 'porcupine'.",
+                f"edge-tts is not installed. {_ENABLE_HINT}",
+            )
+        )
+    elif not voice_name:
+        logger.info("Validation failed: ttsVoice is empty.")
+        checks.append(
+            check(
+                "tts_voice",
+                "Edge TTS voice",
+                "fail",
+                "ttsVoice cannot be empty.",
             )
         )
     else:
-        engines = (requested,) if requested in _ENGINE_MODULES else _auto_engines()
-        installed = [
-            name
-            for name in engines
-            if all(_module_available(module) for module in _ENGINE_MODULES[name])
-        ]
-        if installed:
-            labels = " or ".join(_ENGINE_LABELS[name] for name in installed)
-            checks.append(check("engine", "Wake word engine", "pass", f"{labels} installed."))
-        elif requested == "auto":
+        if _edge_tts_voice_exists(voice_name):
             checks.append(
                 check(
-                    "engine",
-                    "Wake word engine",
-                    "fail",
-                    f"Neither openWakeWord nor Porcupine is installed. {_ENABLE_HINT}",
+                    "tts_voice",
+                    "Edge TTS voice",
+                    "pass",
+                    f"Voice '{voice_name}' is available in Edge TTS.",
                 )
             )
         else:
+            logger.info("Validation failed: Voice not found in the Edge TTS voice list.")
             checks.append(
                 check(
-                    "engine",
-                    "Wake word engine",
+                    "tts_voice",
+                    "Edge TTS voice",
                     "fail",
-                    f"{_ENGINE_LABELS[requested]} is not installed; "
-                    f"install it or set wakeWordEngine to 'auto'. {_ENABLE_HINT}",
+                    f"Voice '{voice_name}' was not found in the Edge TTS voice list.",
+                )
+            )
+
+    audio_device_index = values.get("audioDeviceIndex")
+    if audio_device_index is not None and audio_device_index != "":
+        if _audio_device_index_ok(audio_device_index):
+            checks.append(
+                check(
+                    "audio_device_index",
+                    "Audio device index",
+                    "pass",
+                    "The audio device index is a non-negative integer.",
+                )
+            )
+        else:
+            logger.info("Validation failed: Audio device index is not a valid non-negative integer.")
+            checks.append(
+                check(
+                    "audio_device_index",
+                    "Audio device index",
+                    "fail",
+                    "audioDeviceIndex must be an integer >= 0.",
                 )
             )
 
     if _module_available("pvrecorder"):
         checks.append(check("recorder", "Microphone recorder", "pass", "pvrecorder installed."))
     else:
+        logger.info("Validation failed: Recorder module 'pvrecorder' is not available.")
         checks.append(
             check(
                 "recorder",
@@ -108,126 +166,6 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
                 f"pvrecorder is not installed. {_ENABLE_HINT}",
             )
         )
-
-    if _module_available("edge_tts"):
-        checks.append(check("tts", "Text-to-speech", "pass", "edge-tts installed."))
-    else:
-        checks.append(
-            check("tts", "Text-to-speech", "fail", f"edge-tts is not installed. {_ENABLE_HINT}")
-        )
-
-    if shutil.which("mpv"):
-        checks.append(check("audio_player", "Audio player", "pass", "mpv found."))
-    elif shutil.which("ffmpeg") and (shutil.which("aplay") or shutil.which("paplay")):
-        checks.append(
-            check("audio_player", "Audio player", "pass", "ffmpeg with aplay/paplay found.")
-        )
-    else:
-        checks.append(
-            check(
-                "audio_player",
-                "Audio player",
-                "fail",
-                "No audio player found. Install mpv, or ffmpeg together with "
-                "alsa-utils (aplay) or pulseaudio-utils (paplay).",
-            )
-        )
-
-    raw_models = cast("list[Any]", values.get("wakeWordModels") or [])
-    entries = [string_value(entry) for entry in raw_models if string_value(entry)]
-    if not entries:
-        checks.append(
-            check("wake_words", "Wake words", "skipped", "All built-in wake words will be used.")
-        )
-    else:
-        missing_files = [
-            entry
-            for entry in entries
-            if entry.lower().endswith(".tflite") and not Path(entry).is_file()
-        ]
-        if missing_files:
-            checks.append(
-                check(
-                    "wake_words",
-                    "Wake words",
-                    "fail",
-                    "Wake word model file not found on the gateway host: "
-                    + ", ".join(missing_files),
-                )
-            )
-        elif any(entry.lower().endswith(".tflite") for entry in entries):
-            checks.append(
-                check("wake_words", "Wake words", "pass", "Custom wake word model files found.")
-            )
-        else:
-            checks.append(
-                check(
-                    "wake_words",
-                    "Wake words",
-                    "skipped",
-                    "Built-in wake word names are verified when the channel starts.",
-                )
-            )
-
-    raw_sensitivities = cast("list[Any]", values.get("wakeWordSensitivities") or [])
-    sensitivities = [
-        string_value(value) for value in raw_sensitivities if string_value(value)
-    ]
-    invalid = [value for value in sensitivities if not _sensitivity_ok(value)]
-    if invalid:
-        checks.append(
-            check(
-                "sensitivities",
-                "Wake word sensitivities",
-                "fail",
-                "Not a valid sensitivity (0.0 to 1.0, comma accepted): " + ", ".join(invalid),
-            )
-        )
-    elif sensitivities:
-        checks.append(
-            check("sensitivities", "Wake word sensitivities", "pass", "All sensitivities parse.")
-        )
-    else:
-        checks.append(
-            check(
-                "sensitivities",
-                "Wake word sensitivities",
-                "skipped",
-                "Unset; every wake word uses 0.5.",
-            )
-        )
-
-    device = int_value(values.get("audioDeviceIndex"))
-    if device is not None and device < 0:
-        checks.append(
-            check(
-                "audio_device",
-                "Audio device index",
-                "fail",
-                "Set audioDeviceIndex to a whole number of 0 or more.",
-            )
-        )
-    else:
-        index = device if device is not None else 1
-        checks.append(
-            check(
-                "audio_device",
-                "Audio device index",
-                "skipped",
-                f"Microphone availability for device index {index} is verified "
-                "when the channel starts.",
-            )
-        )
-
-    checks.append(
-        check(
-            "manual_review",
-            "Microphone and LED",
-            "skipped",
-            "Live wake word detection, recording, and LED output are verified "
-            "when the channel starts.",
-        )
-    )
 
     return status_from_checks("voice", checks, missing)
 
