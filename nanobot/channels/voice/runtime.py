@@ -17,6 +17,15 @@ from pydantic import Field
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
+from nanobot.channels.voice.defaults import (
+    DEFAULT_AUDIO_DEVICE_INDEX,
+    DEFAULT_MAX_RECORDING_DURATION,
+    DEFAULT_SILENCE_DURATION,
+    DEFAULT_SILENCE_THRESHOLD,
+    DEFAULT_TTS_VOICE,
+    DEFAULT_WAKE_WORD_ENGINE,
+    DEFAULT_WAKE_WORD_SENSITIVITY,
+)
 from nanobot.channels.voice.status import CommandStatusListener, VoiceStatus, VoiceStatusEmitter
 from nanobot.config.schema import Base
 
@@ -103,7 +112,7 @@ class VoiceConfig(Base):
 
     # Wake word engine: "auto" prefers openWakeWord and falls back to
     # Porcupine on platforms without openwakeword wheels (32-bit ARM).
-    wake_word_engine: str = "auto"
+    wake_word_engine: str = DEFAULT_WAKE_WORD_ENGINE
 
     # Wake word models, interpreted per engine:
     # - openwakeword: built-in names (okay_nabu, hey_jarvis, hey_mycroft, alexa,
@@ -115,13 +124,13 @@ class VoiceConfig(Base):
     wake_word_sensitivities: list[str] = Field(default_factory=list)  # detection thresholds (openWakeWord) / sensitivities (Porcupine), range 0.0 to 1.0; empty = 0.5 for all wake words
 
     # Audio settings
-    audio_device_index: int = 1
-    silence_threshold: int = 500
-    silence_duration: int = 1500  # in milliseconds
-    max_recording_duration: int = 30  # in seconds
+    audio_device_index: int = DEFAULT_AUDIO_DEVICE_INDEX
+    silence_threshold: int = DEFAULT_SILENCE_THRESHOLD
+    silence_duration: int = DEFAULT_SILENCE_DURATION  # in milliseconds
+    max_recording_duration: int = DEFAULT_MAX_RECORDING_DURATION  # in seconds
 
     # TTS settings
-    tts_voice: str = "en-US-AriaNeural"
+    tts_voice: str = DEFAULT_TTS_VOICE
 
     # Optional status indicator (e.g. LED). Shell command executed on every state
     # change via `sh -c <command>`, the status value is passed as $1.
@@ -155,7 +164,7 @@ class VoiceChannel(BaseChannel):
         try:
             value = float(val)
         except (TypeError, ValueError):
-            return 0.5
+            return DEFAULT_WAKE_WORD_SENSITIVITY
         return value / 100 if value > 1 else value
 
     def __init__(self, config: Any, bus: MessageBus):
@@ -336,7 +345,7 @@ class VoiceChannel(BaseChannel):
         if not configured:
             # Nothing configured: use the documented default (0.5) for every
             # item, silently.
-            return [0.5] * count
+            return [DEFAULT_WAKE_WORD_SENSITIVITY] * count
         if len(configured) < count:
             # Partial configuration is expected to be padded with the default
             # value, so this is informational rather than a misconfiguration.
@@ -346,7 +355,7 @@ class VoiceChannel(BaseChannel):
                 label,
                 count,
             )
-            return configured + [0.5] * (count - len(configured))
+            return configured + [DEFAULT_WAKE_WORD_SENSITIVITY] * (count - len(configured))
         if len(configured) > count:
             self.logger.warning(
                 "Number of sensitivities ({}) exceeds number of {} ({}); truncating.",
@@ -375,7 +384,9 @@ class VoiceChannel(BaseChannel):
         for embeddings in self._features.process_streaming(pcm_bytes):
             for word in self._words.values():
                 for probability in word.process_streaming(embeddings):
-                    if probability >= self._model_thresholds.get(word.id, 0.5):
+                    if probability >= self._model_thresholds.get(
+                        word.id, DEFAULT_WAKE_WORD_SENSITIVITY
+                    ):
                         return True
         return False
 

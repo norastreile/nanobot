@@ -3,29 +3,38 @@
 from nanobot.channels._manifest import field, required
 from nanobot.channels.contracts import ChannelSetupSpec
 from nanobot.channels.plugin import ChannelPlugin
+from nanobot.channels.voice.defaults import (
+    DEFAULT_AUDIO_DEVICE_INDEX,
+    DEFAULT_MAX_RECORDING_DURATION,
+    DEFAULT_SILENCE_DURATION,
+    DEFAULT_SILENCE_THRESHOLD,
+    DEFAULT_TTS_VOICE,
+    DEFAULT_WAKE_WORD_ENGINE,
+)
 from nanobot.channels.voice.validation import validate
 
 """Voice Channel configuration."""
 SETUP_SPEC = ChannelSetupSpec(
     fields={
-        "ttsVoice": field(kind="string", default="en-US-AriaNeural"),
+        "ttsVoice": field(kind="string", default=DEFAULT_TTS_VOICE),
         "wakeWordEngine": field(
             kind="string",
             choices=("auto", "openwakeword", "porcupine"),
-            default="auto",
+            default=DEFAULT_WAKE_WORD_ENGINE,
         ),  # auto = openWakeWord with Porcupine fallback on 32-bit ARM
         "wakeWordModels": field("list"),  # wake words: built-in names (openwakeword: hey_jarvis/...; porcupine: jarvis/...) or custom .tflite model paths
-        "wakeWordSensitivities": field("list", default=["0.5"]),  # detection thresholds/sensitivities, range 0.0 to 1.0
-        "audioDeviceIndex": field(kind="int", default=1),
-        "silenceThreshold": field(kind="int", default=500),
-        "silenceDuration": field(kind="int", default=1500),  # in milliseconds
-        "maxRecordingDuration": field(kind="int", default=30),  # in seconds
+        "wakeWordSensitivities": field("list"),  # detection thresholds/sensitivities, range 0.0 to 1.0
+        "audioDeviceIndex": field(kind="int", default=DEFAULT_AUDIO_DEVICE_INDEX),
+        "silenceThreshold": field(kind="int", default=DEFAULT_SILENCE_THRESHOLD),
+        "silenceDuration": field(kind="int", default=DEFAULT_SILENCE_DURATION),  # in milliseconds
+        "maxRecordingDuration": field(kind="int", default=DEFAULT_MAX_RECORDING_DURATION),  # in seconds
         "ledCommand": field("string"),  # optional status LED shell command, status as $1
         "allowFrom": field("list"),
     },
     required=(required("ttsVoice"),),
     official_url="https://github.com/rhasspy/pyopen-wakeword",
     validator=validate,
+    verifies_connection=True,
 )
 
 # Wake word engine dependencies are gated at manifest import time (the

@@ -20,10 +20,10 @@ from nanobot.channels.validation import (
     status_from_checks,
     string_value,
 )
+from nanobot.channels.voice.defaults import DEFAULT_TTS_VOICE
 from loguru import logger
 
 _ENABLE_HINT = "Run: nanobot plugins enable voice."
-_DEFAULT_TTS_VOICE = "en-US-AriaNeural"
 
 
 def _module_available(module: str) -> bool:
@@ -87,7 +87,7 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
     logger.debug("Starting Voice checks using values: {}", values)
     
     validation_values = dict(values)
-    validation_values.setdefault("ttsVoice", _DEFAULT_TTS_VOICE)
+    validation_values.setdefault("ttsVoice", DEFAULT_TTS_VOICE)
     checks, missing = required_checks("voice", validation_values)
 
     voice_name = string_value(validation_values.get("ttsVoice"))
