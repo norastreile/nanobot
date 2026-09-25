@@ -19,6 +19,7 @@ from nanobot.channels.validation import (
     status_from_checks,
     string_value,
 )
+from loguru import logger
 
 
 def _sensitivity_ok(value: Any) -> bool:
@@ -30,7 +31,11 @@ def _sensitivity_ok(value: Any) -> bool:
 
 
 def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict[str, Any]:
+
+    logger.info("Starting Voice checks")
+    
     checks, missing = required_checks("voice", values)
+    logger.info("Received checks: {}", checks)
 
     raw_sensitivities = cast("list[Any]", values.get("wakeWordSensitivities") or [])
     sensitivities = [
@@ -60,7 +65,7 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
             )
         )
 
-    return status_from_checks("telegram", checks, missing)
+    return status_from_checks("voice", checks, missing)
 
 
 __all__ = ["validate"]
