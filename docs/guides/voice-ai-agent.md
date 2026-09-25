@@ -103,8 +103,6 @@ Then merge this snippet into `~/.nanobot/config.json`:
 Useful optional fields:
 
 - `wakeWordSensitivities`: one `0.0`–`1.0` value per wake word.
-- `porcupineModel`: path to a Porcupine speech model (`.pv`) for languages
-  other than English; this is the language model, not a wake word.
 - `audioDeviceIndex`: index of the microphone to record from (default `1`).
 - `silenceThreshold`, `silenceDuration`, `maxRecordingDuration`: tune when a
   spoken request is considered finished.
@@ -183,9 +181,9 @@ Then set:
   works but the output device or volume is wrong; test with
   `mpv --no-video <file>` or `aplay <file>` directly.
 - **Raspberry Pi (32-bit OS)**: the channel automatically uses Porcupine, which
-  ships English keywords only and requires choosing wake words. Custom keywords
-  come as `.ppn` files from the Picovoice Console; other languages need a
-  `porcupineModel` (`.pv`) file.
+  ships with some English keywords by default. For the used pvporcupine version 
+  (1.9.5, the last keyless release), no custom model files can be generated, 
+  so only the built-in keywords can be used for the 32-bit fallback.
 
 ## Next: memory, automations, MCP tools
 

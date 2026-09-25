@@ -14,7 +14,6 @@ export default {
       fields: [
         { key: "channels.voice.ttsVoice", section: "text-to-speech" },
         { key: "channels.voice.wakeWordEngine", section: "wakeword" },
-        { key: "channels.voice.porcupineModel", section: "wakeword" },
         { key: "channels.voice.wakeWordModels", section: "wakeword" },
         { key: "channels.voice.wakeWordSensitivities", section: "wakeword" },
         { key: "channels.voice.audioDeviceIndex", section: "recording" },

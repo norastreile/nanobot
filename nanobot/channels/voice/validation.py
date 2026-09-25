@@ -143,7 +143,7 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
         missing_files = [
             entry
             for entry in entries
-            if entry.lower().endswith((".tflite", ".ppn")) and not Path(entry).is_file()
+            if entry.lower().endswith(".tflite") and not Path(entry).is_file()
         ]
         if missing_files:
             checks.append(
@@ -155,7 +155,7 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
                     + ", ".join(missing_files),
                 )
             )
-        elif any(entry.lower().endswith((".tflite", ".ppn")) for entry in entries):
+        elif any(entry.lower().endswith(".tflite") for entry in entries):
             checks.append(
                 check("wake_words", "Wake words", "pass", "Custom wake word model files found.")
             )

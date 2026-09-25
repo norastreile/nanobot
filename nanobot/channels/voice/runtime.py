@@ -10,7 +10,7 @@ import sys
 import tempfile
 import wave
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import Field
 
@@ -108,13 +108,11 @@ class VoiceConfig(Base):
     # Wake word models, interpreted per engine:
     # - openwakeword: built-in names (okay_nabu, hey_jarvis, hey_mycroft, alexa,
     #   hey_rhasspy) or paths to custom .tflite models; empty = all built-in
-    # - porcupine: built-in names (e.g. "jarvis", 19 available, English only)
-    #   or paths to custom .ppn keyword files; empty = error (choose wake words)
+    # - porcupine: built-in names (e.g. "jarvis", 19 available, English only);
+    #   custom keyword/model files are not supported for pvporcupine 1.9.5;
+    #   empty = error (choose wake words)
     wake_word_models: list[str] = Field(default_factory=list)
     wake_word_sensitivities: list[str] = Field(default_factory=list)  # detection thresholds (openWakeWord) / sensitivities (Porcupine), range 0.0 to 1.0; empty = 0.5 for all wake words
-
-    # Porcupine settings (only used with wake_word_engine = "porcupine" or the 32-bit ARM fallback)
-    porcupine_model: str = ""  # path to the Porcupine speech model (.pv), e.g. language-specific; NOT a wake word keyword
 
     # Audio settings
     audio_device_index: int = 1
@@ -292,8 +290,6 @@ class VoiceChannel(BaseChannel):
                 "or use wake_word_engine='openwakeword'."
             )
 
-        model_path: Optional[str] = self.config.porcupine_model.strip() or None
-
         keyword_paths: list[str] = []
         keyword_names: list[str] = []
         entries = [e.strip() for e in self.config.wake_word_models if e.strip()]
@@ -306,29 +302,27 @@ class VoiceChannel(BaseChannel):
             # created.
             self.logger.info("No wake words configured - listening for all built-in Porcupine keywords.")
         else:
-            # Each entry is either a built-in keyword name (e.g. "jarvis";
-            # English only) or a path to a custom .ppn keyword file.
+            # Entries must be built-in keyword names (e.g. "jarvis"; English
+            # only). Custom keyword/model files are not supported for pvporcupine 1.9.5.
             for entry in entries:
-                if entry.lower().endswith(".ppn"):
-                    if not Path(entry).is_file():
-                        raise ValueError(f"Wake word file not found: {entry}")
-                    keyword_paths.append(entry)
-                    keyword_names.append(Path(entry).stem)
-                else:
-                    built_in = porcupine.KEYWORD_PATHS.get(entry.lower())
-                    if built_in is None:
+                built_in = porcupine.KEYWORD_PATHS.get(entry.lower())
+                if built_in is None:
+                    if entry.lower().endswith(".ppn"):
                         raise ValueError(
-                            f"Unknown built-in Porcupine keyword '{entry}'. "
-                            f"Built-in keywords: {sorted(porcupine.KEYWORD_PATHS)}; "
-                            "or provide a path to a custom .ppn keyword file."
+                            f"Custom Porcupine keyword files are not supported: '{entry}'. "
+                            "pvporcupine 1.9.5 has no compatible custom keyword/model files; "
+                            f"choose a built-in keyword: {sorted(porcupine.KEYWORD_PATHS)}."
                         )
-                    keyword_paths.append(str(built_in))
-                    keyword_names.append(entry.lower())
+                    raise ValueError(
+                        f"Unknown built-in Porcupine keyword '{entry}'. "
+                        f"Built-in keywords: {sorted(porcupine.KEYWORD_PATHS)}."
+                    )
+                keyword_paths.append(str(built_in))
+                keyword_names.append(entry.lower())
 
         sensitivities = self._padded_sensitivities(len(keyword_paths), "keywords")
 
         self._porcupine = porcupine.create(
-            model_path=model_path,
             keyword_paths=keyword_paths,
             sensitivities=sensitivities,
         )

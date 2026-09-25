@@ -14,9 +14,8 @@ SETUP_SPEC = ChannelSetupSpec(
             choices=("auto", "openwakeword", "porcupine"),
             default="auto",
         ),  # auto = openWakeWord with Porcupine fallback on 32-bit ARM
-        "wakeWordModels": field("list"),  # wake words: built-in names (openwakeword: hey_jarvis/...; porcupine: jarvis/...) or custom model paths (.tflite / .ppn)
-        "wakeWordSensitivities": field("list", default=["0.5"]),  # detection thresholds (openWakeWord) / sensitivities (Porcupine), range 0.0 to 1.0
-        "porcupineModel": field("string"),  # path to Porcupine speech model .pv file (language/base model), NOT a wake word keyword
+        "wakeWordModels": field("list"),  # wake words: built-in names (openwakeword: hey_jarvis/...; porcupine: jarvis/...) or custom .tflite model paths
+        "wakeWordSensitivities": field("list", default=["0.5"]),  # detection thresholds/sensitivities, range 0.0 to 1.0
         "audioDeviceIndex": field(kind="int", default=1),
         "silenceThreshold": field(kind="int", default=500),
         "silenceDuration": field(kind="int", default=1500),  # in milliseconds

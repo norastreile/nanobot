@@ -313,7 +313,7 @@ def test_setup_porcupine_empty_wake_words_uses_all_builtin(monkeypatch) -> None:
     assert len(captured["sensitivities"]) == len(captured["keyword_paths"])
 
 
-def test_setup_porcupine_resolves_builtin_and_ppn(monkeypatch, tmp_path) -> None:
+def test_setup_porcupine_resolves_builtin_keywords(monkeypatch) -> None:
     if voice_runtime.pvporcupine is None:
         pytest.skip("pvporcupine not installed")
     monkeypatch.setattr(voice_runtime, "_porcupine_requires_access_key", lambda m: False)
@@ -329,22 +329,36 @@ def test_setup_porcupine_resolves_builtin_and_ppn(monkeypatch, tmp_path) -> None
 
     monkeypatch.setattr(voice_runtime.pvporcupine, "create", fake_create)
 
-    ppn = tmp_path / "custom.ppn"
-    ppn.write_bytes(b"fake")
     channel = make_channel(
         {
             "wakeWordEngine": "porcupine",
-            "wakeWordModels": ["JARVIS", str(ppn)],
+            "wakeWordModels": ["JARVIS"],
         }
     )
     channel._setup_porcupine()
     # keyless pvporcupine 1.9.5: no access_key may be passed
     assert "access_key" not in captured
     keyword_paths = captured["keyword_paths"]
-    assert len(keyword_paths) == 2
+    assert len(keyword_paths) == 1
     assert keyword_paths[0].endswith("jarvis_linux.ppn")
-    assert keyword_paths[1] == str(ppn)
     assert channel._frame_length == 512
+
+
+def test_setup_porcupine_rejects_custom_ppn(monkeypatch, tmp_path) -> None:
+    if voice_runtime.pvporcupine is None:
+        pytest.skip("pvporcupine not installed")
+    monkeypatch.setattr(voice_runtime, "_porcupine_requires_access_key", lambda m: False)
+
+    ppn = tmp_path / "custom.ppn"
+    ppn.write_bytes(b"fake")
+    channel = make_channel(
+        {
+            "wakeWordEngine": "porcupine",
+            "wakeWordModels": [str(ppn)],
+        }
+    )
+    with pytest.raises(ValueError, match="Custom Porcupine keyword files are not supported"):
+        channel._setup_porcupine()
 
 
 def test_setup_porcupine_unknown_builtin_keyword(monkeypatch, tmp_path) -> None:

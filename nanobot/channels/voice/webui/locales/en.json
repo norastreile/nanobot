@@ -19,7 +19,7 @@
       "wakeWordModels": {
         "label": "Custom wake words or models",
         "placeholder": "/path/to/model.tflite",
-        "help": "Wake words, interpreted per engine; leave empty to listen for all built-in wake words (both engines). openWakeWord: built-in names (okay_nabu, hey_jarvis, hey_mycroft, alexa, hey_rhasspy) or paths to custom .tflite models. Porcupine (32-bit fallback): built-in keyword names (e.g. 'jarvis', 'computer', 19 available, English only) or paths to custom .ppn keyword files (Picovoice Console)."
+        "help": "Wake words, interpreted per engine; leave empty to listen for all built-in wake words (both engines). openWakeWord: built-in names (okay_nabu, hey_jarvis, hey_mycroft, alexa, hey_rhasspy) or paths to custom .tflite models. Porcupine (32-bit fallback): built-in keyword names only (e.g. 'jarvis', 'computer', 19 available, English only)."
       },
       "wakeWordSensitivities": {
         "label": "Wake word sensitivities",
@@ -60,11 +60,6 @@
         "label": "Allowed users",
         "placeholder": "voice_user",
         "help": "Sender IDs that may talk to nanobot. Use 'voice_user' to allow the person speaking into the local microphone, '*' for everyone."
-      },
-      "porcupineModel": {
-        "label": "Porcupine model (.pv)",
-        "placeholder": "",
-        "help": "Porcupine only: path to the Porcupine speech model file (.pv), e.g. a language-specific model like porcupine_params_de.pv. Leave empty for the default English model."
       }
     }
   }
