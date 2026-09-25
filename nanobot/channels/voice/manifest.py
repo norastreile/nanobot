@@ -3,6 +3,7 @@
 from nanobot.channels._manifest import field, required
 from nanobot.channels.contracts import ChannelSetupSpec
 from nanobot.channels.plugin import ChannelPlugin
+from nanobot.channels.voice.validation import validate
 
 """Voice Channel configuration."""
 SETUP_SPEC = ChannelSetupSpec(
@@ -25,6 +26,7 @@ SETUP_SPEC = ChannelSetupSpec(
     },
     required=(required("ttsVoice"),),
     official_url="https://github.com/rhasspy/pyopen-wakeword",
+    validator=validate,
 )
 
 # Wake word engine dependencies are gated at manifest import time (the

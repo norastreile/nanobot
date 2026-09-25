@@ -71,6 +71,10 @@ Open **Settings → Channels → Voice**:
 7. Save and enable Voice, then restart the gateway when the WebUI shows a
    restart requirement.
 
+   Use the channel's **Validate** action to check the host setup: installed wake
+   word engine, microphone recorder, TTS, audio player, and wake word model files
+   on the gateway host.
+
 ## Manual setup
 
 For a headless installation, install voice support in the gateway's Python
