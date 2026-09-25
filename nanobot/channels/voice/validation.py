@@ -9,16 +9,12 @@ is deferred to channel startup and reported as a skipped check.
 
 from __future__ import annotations
 
-import importlib.util
-import platform
-import shutil
-from pathlib import Path
+
 from typing import Any, cast
 
 from nanobot.channels.contracts import ChannelValidationContext
 from nanobot.channels.validation import (
     check,
-    int_value,
     required_checks,
     status_from_checks,
     string_value,
@@ -64,7 +60,7 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
             )
         )
 
-    return status_from_checks("voice", checks, missing)
+    return status_from_checks("telegram", checks, missing)
 
 
 __all__ = ["validate"]
