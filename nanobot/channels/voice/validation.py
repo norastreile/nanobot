@@ -9,7 +9,10 @@ is deferred to channel startup and reported as a skipped check.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
+import inspect
+from threading import Thread
 from typing import Any, cast
 
 from nanobot.channels.contracts import ChannelValidationContext
@@ -24,6 +27,27 @@ from loguru import logger
 _ENABLE_HINT = "Run: nanobot plugins enable voice."
 
 
+def _await_if_needed(value: Any) -> Any:
+    """Run awaitable values safely from a synchronous validation entrypoint."""
+    if not inspect.isawaitable(value):
+        return value
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(value)
+
+    result: dict[str, Any] = {}
+
+    def runner() -> None:
+        result["value"] = asyncio.run(value)
+
+    thread = Thread(target=runner)
+    thread.start()
+    thread.join()
+    return result.get("value")
+
+
 def _edge_tts_voice_exists(voice_name: str) -> bool:
     """Return whether the configured Edge TTS voice exists in the current library."""
     if not _module_available("edge_tts"):
@@ -32,7 +56,9 @@ def _edge_tts_voice_exists(voice_name: str) -> bool:
     try:
         import edge_tts
 
-        voices = edge_tts.list_voices()
+        voices = _await_if_needed(edge_tts.list_voices())
+        if not isinstance(voices, list):
+            return False
         for voice in voices:
             name = voice.get("ShortName") or voice.get("Name")
             if name == voice_name:
