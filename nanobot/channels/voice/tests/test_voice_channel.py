@@ -7,6 +7,7 @@ import pytest
 from loguru import logger
 
 import nanobot.channels.voice.runtime as voice_runtime
+import nanobot.channels.voice.validation as voice_validation
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.voice.runtime import SPEAKER_ID, VoiceChannel, VoiceConfig
 from nanobot.channels.voice.status import (
@@ -42,6 +43,32 @@ def test_config_accepts_camel_case_keys() -> None:
     assert config.allow_from == ["*"]
     assert config.silence_duration == 2000
     # unset fields keep their defaults
+
+
+def test_validate_checks_edge_tts_voice_exists(monkeypatch) -> None:
+    values = {"ttsVoice": "en-US-AriaNeural"}
+
+    monkeypatch.setattr(voice_validation, "_module_available", lambda module: module == "edge_tts")
+
+    class _FakeEdgeTTS:
+        @staticmethod
+        async def list_voices():
+            return [{"ShortName": "en-US-AriaNeural"}, {"ShortName": "en-US-JennyNeural"}]
+
+    monkeypatch.setitem(__import__("sys").modules, "edge_tts", _FakeEdgeTTS)
+
+    payload = voice_validation.validate(values, None)
+    voices = next(check for check in payload["checks"] if check["id"] == "tts_voice")
+    assert voices["status"] == "pass"
+    assert "en-US-AriaNeural" in voices["message"]
+
+
+def test_validate_rejects_invalid_audio_device_index() -> None:
+    values = {"ttsVoice": "en-US-AriaNeural", "audioDeviceIndex": -1}
+    payload = voice_validation.validate(values, None)
+    audio_index = next(check for check in payload["checks"] if check["id"] == "audio_device_index")
+    assert audio_index["status"] == "fail"
+    assert "integer >= 0" in audio_index["message"]
 
 
 def test_safe_float_normalizes_percent_values() -> None:

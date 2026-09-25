@@ -81,6 +81,16 @@ def _module_available(module: str) -> bool:
     return importlib.util.find_spec(module) is not None
 
 
+def _audio_device_index_ok(value: Any) -> bool:
+    """Return whether the optional device index is a non-negative integer."""
+    if value is None or value == "":
+        return True
+    try:
+        return int(value) >= 0
+    except (TypeError, ValueError):
+        return False
+
+
 def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict[str, Any]:
 
     logger.info("Starting Voice checks using values: {}", values)
@@ -131,6 +141,27 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
                 f"ttsVoice is required. {_ENABLE_HINT}",
             )
         )
+
+    audio_device_index = values.get("audioDeviceIndex")
+    if audio_device_index is not None and audio_device_index != "":
+        if _audio_device_index_ok(audio_device_index):
+            checks.append(
+                check(
+                    "audio_device_index",
+                    "Audio device index",
+                    "pass",
+                    "The audio device index is a non-negative integer.",
+                )
+            )
+        else:
+            checks.append(
+                check(
+                    "audio_device_index",
+                    "Audio device index",
+                    "fail",
+                    "audioDeviceIndex must be an integer >= 0.",
+                )
+            )
 
     result = status_from_checks("voice", checks, missing)
     logger.info("Validation result: {}", result)
