@@ -23,6 +23,7 @@ from nanobot.channels.validation import (
 from loguru import logger
 
 _ENABLE_HINT = "Run: nanobot plugins enable voice."
+_DEFAULT_TTS_VOICE = "en-US-AriaNeural"
 
 
 def _module_available(module: str) -> bool:
@@ -85,23 +86,32 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
 
     logger.debug("Starting Voice checks using values: {}", values)
     
-    checks, missing = required_checks("voice", values)
+    validation_values = dict(values)
+    validation_values.setdefault("ttsVoice", _DEFAULT_TTS_VOICE)
+    checks, missing = required_checks("voice", validation_values)
 
-    if _module_available("pvrecorder"):
-        checks.append(check("recorder", "Microphone recorder", "pass", "pvrecorder installed."))
-    else:
-        logger.info("Validation failed: Recorder module 'pvrecorder' is not available.")
+    voice_name = string_value(validation_values.get("ttsVoice"))
+    if not _module_available("edge_tts"):
+        logger.info("Validation failed: Edge TTS package is not installed.")
         checks.append(
             check(
-                "recorder",
-                "Microphone recorder",
+                "tts_voice",
+                "Edge TTS voice",
                 "fail",
-                f"pvrecorder is not installed. {_ENABLE_HINT}",
+                f"edge-tts is not installed. {_ENABLE_HINT}",
             )
         )
-
-    voice_name = string_value(values.get("ttsVoice"))
-    if voice_name:
+    elif not voice_name:
+        logger.info("Validation failed: ttsVoice is empty.")
+        checks.append(
+            check(
+                "tts_voice",
+                "Edge TTS voice",
+                "fail",
+                "ttsVoice cannot be empty.",
+            )
+        )
+    else:
         if _edge_tts_voice_exists(voice_name):
             checks.append(
                 check(
@@ -121,16 +131,6 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
                     f"Voice '{voice_name}' was not found in the Edge TTS voice list.",
                 )
             )
-    else:
-        logger.info("Validation failed: Voice module 'edge_tts' is not available.")
-        checks.append(
-            check(
-                "tts_voice",
-                "Edge TTS voice",
-                "fail",
-                f"ttsVoice is required. {_ENABLE_HINT}",
-            )
-        )
 
     audio_device_index = values.get("audioDeviceIndex")
     if audio_device_index is not None and audio_device_index != "":
@@ -153,6 +153,19 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
                     "audioDeviceIndex must be an integer >= 0.",
                 )
             )
+
+    if _module_available("pvrecorder"):
+        checks.append(check("recorder", "Microphone recorder", "pass", "pvrecorder installed."))
+    else:
+        logger.info("Validation failed: Recorder module 'pvrecorder' is not available.")
+        checks.append(
+            check(
+                "recorder",
+                "Microphone recorder",
+                "fail",
+                f"pvrecorder is not installed. {_ENABLE_HINT}",
+            )
+        )
 
     return status_from_checks("voice", checks, missing)
 

@@ -24,11 +24,40 @@ def _validate(values: dict[str, Any], monkeypatch=None, *, installed: tuple[str,
     return voice_validation.validate(values, CONTEXT)
 
 
-def test_missing_tts_voice_reports_needs_setup(monkeypatch) -> None:
-    payload = _validate({"wakeWordModels": ["hey_jarvis"]}, monkeypatch, installed=("pvrecorder", "edge_tts"))
-    assert payload["status"] == "needs_setup"
-    assert payload["missing_fields"] == ["ttsVoice"]
-    assert payload["can_enable"] is False
+def test_omitted_tts_voice_uses_runtime_default(monkeypatch) -> None:
+    checked_voices: list[str] = []
+    monkeypatch.setattr(
+        voice_validation,
+        "_module_available",
+        lambda name: name in {"pvrecorder", "edge_tts"},
+    )
+    monkeypatch.setattr(
+        voice_validation,
+        "_edge_tts_voice_exists",
+        lambda voice_name: checked_voices.append(voice_name) or True,
+    )
+
+    payload = voice_validation.validate({}, CONTEXT)
+
+    assert checked_voices == ["en-US-AriaNeural"]
+    assert _check(payload, "tts_voice")["status"] == "pass"
+    assert payload["missing_fields"] == []
+
+
+def test_empty_tts_voice_fails(monkeypatch) -> None:
+    payload = _validate({"ttsVoice": ""}, monkeypatch, installed=("pvrecorder", "edge_tts"))
+
+    voice_check = _check(payload, "tts_voice")
+    assert voice_check["status"] == "fail"
+    assert "cannot be empty" in voice_check["message"]
+
+
+def test_missing_edge_tts_reports_dependency_error(monkeypatch) -> None:
+    payload = _validate({"ttsVoice": "en-US-AriaNeural"}, monkeypatch, installed=("pvrecorder",))
+
+    voice_check = _check(payload, "tts_voice")
+    assert voice_check["status"] == "fail"
+    assert "edge-tts is not installed" in voice_check["message"]
 
 
 def test_valid_voice_and_device_index_passes(monkeypatch) -> None:
