@@ -1,10 +1,8 @@
-"""Voice setup validation owned by the channel package.
+"""Validate Voice setup fields and dependencies without starting the channel.
 
-Validation is static and dependency-free on purpose: optional wake word and
-TTS modules are detected via ``importlib.util.find_spec`` (no heavy imports),
-playback backends via ``shutil.which``, and custom model files via
-``Path.is_file()`` on the gateway host. Anything that touches audio hardware
-is deferred to channel startup and reported as a skipped check.
+Checks recorder availability, the configured Edge TTS voice, and an optional
+non-negative audio device index. Microphone hardware and wake-word models are
+not inspected here; those are handled by the runtime when the channel starts.
 """
 
 from __future__ import annotations
@@ -25,6 +23,11 @@ from nanobot.channels.validation import (
 from loguru import logger
 
 _ENABLE_HINT = "Run: nanobot plugins enable voice."
+
+
+def _module_available(module: str) -> bool:
+    """Check importability without importing (no SDK side effects)."""
+    return importlib.util.find_spec(module) is not None
 
 
 def _await_if_needed(value: Any) -> Any:
@@ -68,19 +71,6 @@ def _edge_tts_voice_exists(voice_name: str) -> bool:
         return False
 
 
-def _sensitivity_ok(value: Any) -> bool:
-    """Mirror the runtime normalization: 0.0-1.0, or 0-100 scaled down."""
-    try:
-        return float(string_value(value).replace(",", ".")) >= 0
-    except ValueError:
-        return False
-
-
-def _module_available(module: str) -> bool:
-    """Check importability without importing (no SDK side effects)."""
-    return importlib.util.find_spec(module) is not None
-
-
 def _audio_device_index_ok(value: Any) -> bool:
     """Return whether the optional device index is a non-negative integer."""
     if value is None or value == "":
@@ -93,16 +83,14 @@ def _audio_device_index_ok(value: Any) -> bool:
 
 def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict[str, Any]:
 
-    logger.info("Starting Voice checks using values: {}", values)
+    logger.debug("Starting Voice checks using values: {}", values)
     
     checks, missing = required_checks("voice", values)
-    logger.info("Received checks: {}", checks)
 
     if _module_available("pvrecorder"):
-        logger.info("Recorder module 'pvrecorder' is available.")
         checks.append(check("recorder", "Microphone recorder", "pass", "pvrecorder installed."))
     else:
-        logger.info("Recorder module 'pvrecorder' is not available.")
+        logger.info("Validation failed: Recorder module 'pvrecorder' is not available.")
         checks.append(
             check(
                 "recorder",
@@ -124,6 +112,7 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
                 )
             )
         else:
+            logger.info("Validation failed: Voice not found in the Edge TTS voice list.")
             checks.append(
                 check(
                     "tts_voice",
@@ -133,6 +122,7 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
                 )
             )
     else:
+        logger.info("Validation failed: Voice module 'edge_tts' is not available.")
         checks.append(
             check(
                 "tts_voice",
@@ -154,6 +144,7 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
                 )
             )
         else:
+            logger.info("Validation failed: Audio device index is not a valid non-negative integer.")
             checks.append(
                 check(
                     "audio_device_index",
@@ -163,9 +154,7 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
                 )
             )
 
-    result = status_from_checks("voice", checks, missing)
-    logger.info("Validation result: {}", result)
-    return result
+    return status_from_checks("voice", checks, missing)
 
 
 __all__ = ["validate"]
