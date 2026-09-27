@@ -3,6 +3,7 @@
 
 import asyncio
 import platform
+import re
 import shutil
 import struct
 import subprocess
@@ -136,6 +137,30 @@ class VoiceConfig(Base):
     # change via `sh -c <command>`, the status value is passed as $1.
     led_command: str = ""
 
+    # Silent mode behavior: this keeps the microphone active and wake-word
+    # listening running, but suppresses spoken answers until the user explicitly
+    # re-enables audio output. The default strategy uses phrase aliases so users
+    # can tailor the exact language they expect.
+    silent_mode_strategy: str = "phrase_aliases"
+    silent_mode_enter_phrases: list[str] = Field(
+        default_factory=lambda: [
+            "start silent mode",
+            "go silent",
+            "silent mode",
+            "be quiet",
+            "mute yourself",
+        ]
+    )
+    silent_mode_exit_phrases: list[str] = Field(
+        default_factory=lambda: [
+            "listen to me again",
+            "resume listening",
+            "wake up again",
+            "leave silent mode",
+            "normal mode",
+        ]
+    )
+
 
 class VoiceChannel(BaseChannel):
     """
@@ -172,6 +197,7 @@ class VoiceChannel(BaseChannel):
             config = VoiceConfig.model_validate(config)
         super().__init__(config, bus)
         self.config: VoiceConfig = config
+        self._silent_mode = False
         self._engine = ""
         self._features: Any = None
         self._words: dict[str, Any] = {}
@@ -180,9 +206,61 @@ class VoiceChannel(BaseChannel):
         self._frame_length = 1280  # 80 ms of 16 kHz audio, as recommended by openWakeWord
         self._recorder: Any = None
         self._sample_rate = 16000
+        self._silent_mode_enter_phrases = [
+            self._normalize_voice_text(phrase)
+            for phrase in self.config.silent_mode_enter_phrases
+            if self._normalize_voice_text(phrase)
+        ]
+        self._silent_mode_exit_phrases = [
+            self._normalize_voice_text(phrase)
+            for phrase in self.config.silent_mode_exit_phrases
+            if self._normalize_voice_text(phrase)
+        ]
         self.status_emitter = VoiceStatusEmitter()
         if config.led_command:
             self.status_emitter.add_listener(CommandStatusListener(config.led_command))
+
+    @staticmethod
+    def _normalize_voice_text(text: str) -> str:
+        normalized = re.sub(r"[^a-z0-9\s]", " ", text.lower())
+        return " ".join(normalized.split())
+
+    def _resolve_silent_mode_action(self, transcription: str) -> str | None:
+        """Return 'enable', 'disable', or None.
+
+        The default phrase_aliases strategy matches configured phrases in a
+        speaker-agnostic way, allowing the operator to add custom translations.
+        The semantic strategy shares the same alias list but is easy to swap to an
+        LLM-based classifier later with no change to the rest of the voice loop.
+        """
+        normalized = self._normalize_voice_text(transcription)
+        if not normalized:
+            return None
+
+        if self.config.silent_mode_strategy == "semantic":
+            entry_phrases = self._silent_mode_enter_phrases or ["silent mode", "go silent"]
+            exit_phrases = self._silent_mode_exit_phrases or ["listen to me again"]
+        else:
+            entry_phrases = self._silent_mode_enter_phrases or ["silent mode", "go silent"]
+            exit_phrases = self._silent_mode_exit_phrases or ["listen to me again"]
+
+        for phrase in entry_phrases:
+            if phrase in normalized:
+                return "enable"
+        for phrase in exit_phrases:
+            if phrase in normalized:
+                return "disable"
+        return None
+
+    async def _set_silent_mode(self, enabled: bool) -> None:
+        if self._silent_mode == enabled:
+            return
+        self._silent_mode = enabled
+        self.logger.info("Voice silent mode {}", "enabled" if enabled else "disabled")
+        if enabled:
+            await self.status_emitter.emit(VoiceStatus.SILENT)
+        else:
+            await self.status_emitter.emit(VoiceStatus.LISTENING_WAKE_WORD)
 
     @staticmethod
     def _audio_player_available() -> bool:
@@ -492,6 +570,9 @@ class VoiceChannel(BaseChannel):
         """Speak the response using TTS."""
         if not msg.content or msg.content == "[empty message]":
             return
+        if self._silent_mode:
+            self.logger.info("Silent mode active; suppressing spoken reply.")
+            return
 
         self.logger.info("Speaking response: {}...", msg.content[:50])
 
@@ -530,10 +611,19 @@ class VoiceChannel(BaseChannel):
 
         if not transcription:
             self.logger.warning("Could not transcribe audio")
-            await self._speak("Das habe ich leider nicht verstanden.")
+            if not self._silent_mode:
+                await self._speak("Das habe ich leider nicht verstanden.")
             return
 
         self.logger.info("Transcribed: {}", transcription)
+
+        control_action = self._resolve_silent_mode_action(transcription)
+        if control_action == "enable":
+            await self._set_silent_mode(True)
+            return
+        if control_action == "disable":
+            await self._set_silent_mode(False)
+            return
 
         await self.status_emitter.emit(VoiceStatus.THINKING)
 

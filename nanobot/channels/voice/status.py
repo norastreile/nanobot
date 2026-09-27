@@ -23,6 +23,7 @@ class VoiceStatus(StrEnum):
     RECORDING = "recording"
     THINKING = "thinking"
     SPEAKING = "speaking"
+    SILENT = "silent"
 
 
 class StatusListener(Protocol):

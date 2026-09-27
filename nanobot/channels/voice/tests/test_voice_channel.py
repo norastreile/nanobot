@@ -126,6 +126,29 @@ def test_inbound_message_uses_speaker_id() -> None:
     assert SPEAKER_ID == "voice_user"
 
 
+def test_silent_mode_phrase_aliases() -> None:
+    channel = make_channel(
+        {
+            "silentModeStrategy": "phrase_aliases",
+            "silentModeEnterPhrases": ["start silent mode", "modo silencioso"],
+            "silentModeExitPhrases": ["listen to me again", "normal mode"],
+        }
+    )
+
+    assert channel._resolve_silent_mode_action("Jarvis, start silent mode") == "enable"
+    assert channel._resolve_silent_mode_action("jarvis listen to me again") == "disable"
+    assert channel._resolve_silent_mode_action("what time is it") is None
+
+
+async def test_silent_mode_suppresses_speech() -> None:
+    channel = make_channel({"silentModeStrategy": "phrase_aliases"})
+    await channel._set_silent_mode(True)
+
+    # silent mode mutes direct speech attempts as well as channel replies
+    await channel._speak("hello")
+    assert channel._silent_mode is True
+
+
 # --- TTS tests (skipped when edge-tts is not installed or offline) ---
 
 pytest.importorskip("edge_tts", reason="edge-tts not installed (pip install edge-tts)")
@@ -180,8 +203,9 @@ async def test_emitter_notifies_listeners() -> None:
     emitter.add_listener(_Listener())
     await emitter.emit(VoiceStatus.RECORDING)
     await emitter.emit(VoiceStatus.SPEAKING)
+    await emitter.emit(VoiceStatus.SILENT)
 
-    assert received == [VoiceStatus.RECORDING, VoiceStatus.SPEAKING]
+    assert received == [VoiceStatus.RECORDING, VoiceStatus.SPEAKING, VoiceStatus.SILENT]
 
 
 async def test_emitter_isolates_listener_failures() -> None:
