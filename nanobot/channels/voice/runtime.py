@@ -259,8 +259,10 @@ class VoiceChannel(BaseChannel):
         self.logger.info("Voice silent mode {}", "enabled" if enabled else "disabled")
         if enabled:
             await self.status_emitter.emit(VoiceStatus.SILENT)
+            await self._speak("Silent Mode aktiviert.", force=True)
         else:
             await self.status_emitter.emit(VoiceStatus.LISTENING_WAKE_WORD)
+            await self._speak("Silent Mode deaktiviert.", force=True)
 
     @staticmethod
     def _audio_player_available() -> bool:
@@ -618,11 +620,14 @@ class VoiceChannel(BaseChannel):
         self.logger.info("Transcribed: {}", transcription)
 
         control_action = self._resolve_silent_mode_action(transcription)
-        if control_action == "enable":
-            await self._set_silent_mode(True)
+        if self._silent_mode:
+            if control_action == "disable":
+                await self._set_silent_mode(False)
+                return
+            await self.status_emitter.emit(VoiceStatus.SILENT)
             return
-        if control_action == "disable":
-            await self._set_silent_mode(False)
+        elif control_action == "enable":
+            await self._set_silent_mode(True)
             return
 
         await self.status_emitter.emit(VoiceStatus.THINKING)
@@ -675,8 +680,14 @@ class VoiceChannel(BaseChannel):
             wf.setframerate(self._sample_rate)
             wf.writeframes(struct.pack(f'{len(audio_data)}h', *audio_data))
 
-    async def _speak(self, text: str) -> None:
+    async def _speak(self, text: str, *, force: bool = False) -> None:
         """Speak text using Edge TTS."""
+
+        if not text:
+            return
+        if self._silent_mode and not force:
+            self.logger.info("Silent mode active; skipping spoken output.")
+            return
 
         if edge_tts is None:
             self.logger.error("Edge TTS not installed; cannot speak.")

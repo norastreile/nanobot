@@ -2,6 +2,7 @@
 
 import asyncio
 import wave
+from unittest.mock import AsyncMock
 
 import pytest
 from loguru import logger
@@ -147,6 +148,33 @@ async def test_silent_mode_suppresses_speech() -> None:
     # silent mode mutes direct speech attempts as well as channel replies
     await channel._speak("hello")
     assert channel._silent_mode is True
+
+
+async def test_silent_mode_confirmations_are_spoken(monkeypatch) -> None:
+    channel = make_channel({"silentModeStrategy": "phrase_aliases"})
+    channel._speak = AsyncMock()
+
+    await channel._set_silent_mode(True)
+    await channel._set_silent_mode(False)
+
+    assert channel._speak.await_args_list == [
+        (("Silent Mode aktiviert.",), {"force": True}),
+        (("Silent Mode deaktiviert.",), {"force": True}),
+    ]
+
+
+async def test_silent_mode_skips_agent_dispatch(monkeypatch) -> None:
+    channel = make_channel({"silentModeStrategy": "phrase_aliases"})
+    channel._silent_mode = True
+    channel._handle_message = AsyncMock()
+    channel.status_emitter.emit = AsyncMock()
+    monkeypatch.setattr(channel, "_record_until_silence", AsyncMock(return_value=[0, 0, 0]))
+    monkeypatch.setattr(channel, "transcribe_audio", AsyncMock(return_value="what time is it"))
+
+    await channel._handle_wake_word()
+
+    channel._handle_message.assert_not_awaited()
+    channel.status_emitter.emit.assert_awaited_with(VoiceStatus.SILENT)
 
 
 # --- TTS tests (skipped when edge-tts is not installed or offline) ---
