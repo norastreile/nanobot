@@ -599,8 +599,6 @@ class VoiceChannel(BaseChannel):
 
         if not transcription:
             self.logger.warning("Could not transcribe audio")
-            if not self._silent_mode:
-                await self._speak("Das habe ich leider nicht verstanden.")
             return
 
         self.logger.info("Transcribed: {}", transcription)
@@ -668,6 +666,14 @@ class VoiceChannel(BaseChannel):
             wf.setframerate(self._sample_rate)
             wf.writeframes(struct.pack(f'{len(audio_data)}h', *audio_data))
 
+    @staticmethod
+    def _strip_markdown_for_tts(text: str) -> str:
+        """Remove emphasis markers while preserving other Markdown syntax."""
+        text = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", text)
+        text = re.sub(r"(\*\*|__|~~)(.+?)\1", r"\2", text)
+        text = re.sub(r"(?<!\w)(\*|_)([^*_]+?)\1(?!\w)", r"\2", text)
+        return text
+
     async def _speak(self, text: str, *, force: bool = False) -> None:
         """Speak text using Edge TTS."""
 
@@ -688,7 +694,8 @@ class VoiceChannel(BaseChannel):
         await self.status_emitter.emit(VoiceStatus.SPEAKING)
         try:
             # Generate TTS
-            communicate = edge_tts.Communicate(text, self.config.tts_voice)
+            speech_text = self._strip_markdown_for_tts(text)
+            communicate = edge_tts.Communicate(speech_text, self.config.tts_voice)
             await communicate.save(str(temp_path))
 
             # Play audio
