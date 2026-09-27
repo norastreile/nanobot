@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
-import inspect
+from collections.abc import Awaitable
 from threading import Thread
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 
@@ -32,20 +32,20 @@ def _module_available(module: str) -> bool:
     return importlib.util.find_spec(module) is not None
 
 
-def _await_if_needed(value: Any) -> Any:
+def _await_if_needed(value: Awaitable[Any]) -> Any:
     """Run awaitable values safely from a synchronous validation entrypoint."""
-    if not inspect.isawaitable(value):
-        return value
+    async def resolve() -> Any:
+        return await value
 
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(value)
+        return asyncio.run(resolve())
 
     result: dict[str, Any] = {}
 
     def runner() -> None:
-        result["value"] = asyncio.run(value)
+        result["value"] = asyncio.run(resolve())
 
     thread = Thread(target=runner)
     thread.start()
@@ -61,9 +61,10 @@ def _edge_tts_voice_exists(voice_name: str) -> bool:
     try:
         import edge_tts
 
-        voices = _await_if_needed(edge_tts.list_voices())
-        if not isinstance(voices, list):
+        raw_voices = _await_if_needed(edge_tts.list_voices())
+        if not isinstance(raw_voices, list):
             return False
+        voices = cast(list[dict[str, Any]], raw_voices)
         for voice in voices:
             name = voice.get("ShortName") or voice.get("Name")
             if name == voice_name:
