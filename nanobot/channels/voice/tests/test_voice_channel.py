@@ -126,6 +126,24 @@ def test_inbound_message_uses_speaker_id() -> None:
     assert SPEAKER_ID == "voice_user"
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("**Important**", "Important"),
+        ("__important__", "important"),
+        ("*italic* and ~~old~~", "italic and old"),
+        ("# Heading", "Heading"),
+        ("## Heading", "Heading"),
+        ("### Heading", "Heading"),
+        ("#### Heading", "Heading"),
+        ("##### Heading", "Heading"),
+        ("###### Heading", "Heading"),
+    ],
+)
+def test_strip_markdown_for_tts(text: str, expected: str) -> None:
+    assert VoiceChannel._strip_markdown_for_tts(text) == expected
+
+
 # --- TTS tests (skipped when edge-tts is not installed or offline) ---
 
 pytest.importorskip("edge_tts", reason="edge-tts not installed (pip install edge-tts)")
