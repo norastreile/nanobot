@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from nanobot.channels.contracts import ChannelValidationContext
 import nanobot.channels.voice.validation as voice_validation
+from nanobot.channels.contracts import ChannelValidationContext
 
 CONTEXT = ChannelValidationContext()
 

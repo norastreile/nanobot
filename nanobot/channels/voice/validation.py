@@ -11,7 +11,9 @@ import asyncio
 import importlib.util
 import inspect
 from threading import Thread
-from typing import Any, cast
+from typing import Any
+
+from loguru import logger
 
 from nanobot.channels.contracts import ChannelValidationContext
 from nanobot.channels.validation import (
@@ -21,7 +23,6 @@ from nanobot.channels.validation import (
     string_value,
 )
 from nanobot.channels.voice.defaults import DEFAULT_TTS_VOICE
-from loguru import logger
 
 _ENABLE_HINT = "Run: nanobot plugins enable voice."
 
@@ -85,7 +86,7 @@ def _audio_device_index_ok(value: Any) -> bool:
 def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict[str, Any]:
 
     logger.debug("Starting Voice checks using values: {}", values)
-    
+
     validation_values = dict(values)
     validation_values.setdefault("ttsVoice", DEFAULT_TTS_VOICE)
     checks, missing = required_checks("voice", validation_values)
