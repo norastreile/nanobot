@@ -163,6 +163,43 @@ async def test_silent_mode_confirmations_are_spoken(monkeypatch) -> None:
     ]
 
 
+async def test_silent_mode_confirmation_restores_silent_status(monkeypatch) -> None:
+    channel = make_channel()
+    channel._running = True
+    statuses: list[VoiceStatus] = []
+
+    class _Listener:
+        async def on_voice_status(self, status: VoiceStatus) -> None:
+            statuses.append(status)
+
+    class _Communicate:
+        def __init__(self, text: str, voice: str) -> None:
+            pass
+
+        async def save(self, path: str) -> None:
+            pass
+
+    class _Process:
+        async def wait(self) -> None:
+            pass
+
+    channel.status_emitter.add_listener(_Listener())
+    monkeypatch.setattr(
+        voice_runtime,
+        "edge_tts",
+        type("FakeEdgeTts", (), {"Communicate": _Communicate}),
+    )
+    monkeypatch.setattr(
+        asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=_Process()),
+    )
+
+    await channel._set_silent_mode(True)
+
+    assert statuses == [VoiceStatus.SPEAKING, VoiceStatus.SILENT]
+
+
 async def test_silent_mode_skips_agent_dispatch(monkeypatch) -> None:
     channel = make_channel({"silentModeStrategy": "phrase_aliases"})
     channel._silent_mode = True

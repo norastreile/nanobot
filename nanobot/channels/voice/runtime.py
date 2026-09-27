@@ -258,10 +258,8 @@ class VoiceChannel(BaseChannel):
         self._silent_mode = enabled
         self.logger.info("Voice silent mode {}", "enabled" if enabled else "disabled")
         if enabled:
-            await self.status_emitter.emit(VoiceStatus.SILENT)
             await self._speak("Silent Mode aktiviert.", force=True)
         else:
-            await self.status_emitter.emit(VoiceStatus.LISTENING_WAKE_WORD)
             await self._speak("Silent Mode deaktiviert.", force=True)
 
     @staticmethod
@@ -748,4 +746,5 @@ class VoiceChannel(BaseChannel):
             temp_path.unlink(missing_ok=True)
 
         if self._running:
-            await self.status_emitter.emit(VoiceStatus.LISTENING_WAKE_WORD)
+            status = VoiceStatus.SILENT if self._silent_mode else VoiceStatus.LISTENING_WAKE_WORD
+            await self.status_emitter.emit(status)
