@@ -611,7 +611,7 @@ class VoiceChannel(BaseChannel):
                 await self._set_silent_mode(False)
                 return
             else:
-              self.logger.info("Silent mode active; skipping  response to user input.")
+              self.logger.info("Silent mode active; skipping response to user input.")
               await self.status_emitter.emit(VoiceStatus.SILENT)
               return
         elif control_action == "enable":
