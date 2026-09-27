@@ -130,19 +130,35 @@ def test_inbound_message_uses_speaker_id() -> None:
 def test_silent_mode_phrase_aliases() -> None:
     channel = make_channel(
         {
-            "silentModeStrategy": "phrase_aliases",
-            "silentModeEnterPhrases": ["start silent mode", "modo silencioso"],
+            "silentModeEnterPhrases": ["silent mode", "modo silencioso"],
             "silentModeExitPhrases": ["listen to me again", "normal mode"],
         }
     )
 
     assert channel._resolve_silent_mode_action("Jarvis, start silent mode") == "enable"
+    channel._silent_mode = True
+    assert channel._resolve_silent_mode_action("Jarvis, start silent mode") is None
     assert channel._resolve_silent_mode_action("jarvis listen to me again") == "disable"
+    channel._silent_mode = False
+    assert channel._resolve_silent_mode_action("jarvis listen to me again") is None
     assert channel._resolve_silent_mode_action("what time is it") is None
 
 
+def test_empty_silent_mode_phrases_disable_matching() -> None:
+    channel = make_channel(
+        {
+            "silentModeEnterPhrases": [],
+            "silentModeExitPhrases": [],
+        }
+    )
+
+    assert channel._resolve_silent_mode_action("silent mode") is None
+    channel._silent_mode = True
+    assert channel._resolve_silent_mode_action("listen to me again") is None
+
+
 async def test_silent_mode_suppresses_speech() -> None:
-    channel = make_channel({"silentModeStrategy": "phrase_aliases"})
+    channel = make_channel()
     await channel._set_silent_mode(True)
 
     # silent mode mutes direct speech attempts as well as channel replies
@@ -151,7 +167,7 @@ async def test_silent_mode_suppresses_speech() -> None:
 
 
 async def test_silent_mode_confirmations_are_spoken(monkeypatch) -> None:
-    channel = make_channel({"silentModeStrategy": "phrase_aliases"})
+    channel = make_channel()
     channel._speak = AsyncMock()
 
     await channel._set_silent_mode(True)
@@ -201,7 +217,7 @@ async def test_silent_mode_confirmation_restores_silent_status(monkeypatch) -> N
 
 
 async def test_silent_mode_skips_agent_dispatch(monkeypatch) -> None:
-    channel = make_channel({"silentModeStrategy": "phrase_aliases"})
+    channel = make_channel()
     channel._silent_mode = True
     channel._handle_message = AsyncMock()
     channel.status_emitter.emit = AsyncMock()

@@ -139,12 +139,9 @@ class VoiceConfig(Base):
 
     # Silent mode behavior: this keeps the microphone active and wake-word
     # listening running, but suppresses spoken answers until the user explicitly
-    # re-enables audio output. The default strategy uses phrase aliases so users
-    # can tailor the exact language they expect.
-    silent_mode_strategy: str = "phrase_aliases"
+    # re-enables audio output. Phrase aliases can be tailored to the user's language.
     silent_mode_enter_phrases: list[str] = Field(
         default_factory=lambda: [
-            "start silent mode",
             "go silent",
             "silent mode",
             "be quiet",
@@ -155,6 +152,7 @@ class VoiceConfig(Base):
         default_factory=lambda: [
             "listen to me again",
             "resume listening",
+            "listen again",
             "wake up again",
             "exit silent mode",
             "unmute yourself",
@@ -226,30 +224,20 @@ class VoiceChannel(BaseChannel):
         return " ".join(normalized.split())
 
     def _resolve_silent_mode_action(self, transcription: str) -> str | None:
-        """Return 'enable', 'disable', or None.
-
-        The default phrase_aliases strategy matches configured phrases in a
-        speaker-agnostic way, allowing the operator to add custom translations.
-        The semantic strategy shares the same alias list but is easy to swap to an
-        LLM-based classifier later with no change to the rest of the voice loop.
-        """
+        """Match configured silent-mode phrases and return the corresponding action."""
         normalized = self._normalize_voice_text(transcription)
         if not normalized:
             return None
 
-        if self.config.silent_mode_strategy == "semantic":
-            entry_phrases = self._silent_mode_enter_phrases or ["silent mode", "go silent"]
-            exit_phrases = self._silent_mode_exit_phrases or ["listen to me again"]
-        else:
-            entry_phrases = self._silent_mode_enter_phrases or ["silent mode", "go silent"]
-            exit_phrases = self._silent_mode_exit_phrases or ["listen to me again"]
-
-        for phrase in entry_phrases:
+        phrases = (
+            self._silent_mode_exit_phrases
+            if self._silent_mode
+            else self._silent_mode_enter_phrases
+        )
+        action = "disable" if self._silent_mode else "enable"
+        for phrase in phrases:
             if phrase in normalized:
-                return "enable"
-        for phrase in exit_phrases:
-            if phrase in normalized:
-                return "disable"
+                return action
         return None
 
     async def _set_silent_mode(self, enabled: bool) -> None:
