@@ -49,6 +49,7 @@ class VoiceStatusEmitter:
 
     async def emit(self, status: VoiceStatus) -> None:
         for listener in self._listeners:
+            logger.debug("Emitting voice status for {}: '{}'", listener, status)
             try:
                 await listener.on_voice_status(status)
             except Exception as e:

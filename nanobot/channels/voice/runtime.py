@@ -156,8 +156,8 @@ class VoiceConfig(Base):
             "listen to me again",
             "resume listening",
             "wake up again",
-            "leave silent mode",
-            "normal mode",
+            "exit silent mode",
+            "unmute yourself",
         ]
     )
 
@@ -624,8 +624,10 @@ class VoiceChannel(BaseChannel):
             if control_action == "disable":
                 await self._set_silent_mode(False)
                 return
-            await self.status_emitter.emit(VoiceStatus.SILENT)
-            return
+            else:
+              self.logger.info("Silent mode active; skipping  response to user input.")
+              await self.status_emitter.emit(VoiceStatus.SILENT)
+              return
         elif control_action == "enable":
             await self._set_silent_mode(True)
             return
@@ -685,6 +687,7 @@ class VoiceChannel(BaseChannel):
 
         if not text:
             return
+
         if self._silent_mode and not force:
             self.logger.info("Silent mode active; skipping spoken output.")
             return
