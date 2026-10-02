@@ -134,14 +134,8 @@ words configured, any built-in wake word triggers recording.
 ## Silent mode
 
 Say your wake word followed by `go silent` or `silent mode` to suppress spoken
-replies. Two short descending tones confirm that silent mode is on. Say your
-wake word followed by `listen to me again` or `exit silent mode` to restore
-spoken replies; two ascending tones confirm that silent mode is off.
-
-The microphone and wake word detection remain active in silent mode. The
-confirmation tones are generated locally, without Edge TTS or a network request,
-and use the existing audio player. Speech transcription still uses the configured
-provider. You can customize the command phrases with `silentModeEnterPhrases`
+replies. Say your wake word followed by `listen to me again` or `exit silent mode`
+to restore spoken replies. You can customize the command phrases with `silentModeEnterPhrases`
 and `silentModeExitPhrases` in the voice channel configuration.
 
 ## Optional: drive a status LED
