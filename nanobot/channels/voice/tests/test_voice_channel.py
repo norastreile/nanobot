@@ -29,6 +29,10 @@ def test_default_config() -> None:
     assert defaults["wakeWordSensitivities"] == []
     assert defaults["ttsVoice"] == "en-US-AriaNeural"
     assert defaults["silenceDuration"] == 1500
+    assert defaults["silentModeEnterPhrases"] == ["silent mode", "mute yourself"]
+    assert defaults["silentModeExitPhrases"] == [
+        "silent mode", "unmute yourself", "listen to me again", "listen again",
+    ]
 
 
 def test_config_accepts_camel_case_keys() -> None:
@@ -154,25 +158,32 @@ def test_silent_mode_phrase_aliases() -> None:
     )
 
     assert channel._resolve_silent_mode_action("Jarvis, start silent mode") == "enable"
+    assert channel._resolve_silent_mode_action("Jarvis, modo silencioso") == "enable"
+    assert channel._resolve_silent_mode_action("mute yourself") is None
     channel._silent_mode = True
     assert channel._resolve_silent_mode_action("Jarvis, start silent mode") is None
     assert channel._resolve_silent_mode_action("jarvis listen to me again") == "disable"
+    assert channel._resolve_silent_mode_action("Jarvis, normal mode") == "disable"
+    assert channel._resolve_silent_mode_action("unmute yourself") is None
     channel._silent_mode = False
     assert channel._resolve_silent_mode_action("jarvis listen to me again") is None
     assert channel._resolve_silent_mode_action("what time is it") is None
 
 
-def test_empty_silent_mode_phrases_disable_matching() -> None:
+@pytest.mark.parametrize("phrases", [[], ["", "   ", "!!!"]])
+def test_empty_silent_mode_phrases_use_defaults(phrases: list[str]) -> None:
     channel = make_channel(
         {
-            "silentModeEnterPhrases": [],
-            "silentModeExitPhrases": [],
+            "silentModeEnterPhrases": phrases,
+            "silentModeExitPhrases": phrases,
         }
     )
 
-    assert channel._resolve_silent_mode_action("silent mode") is None
+    for phrase in VoiceConfig().silent_mode_enter_phrases:
+        assert channel._resolve_silent_mode_action(phrase) == "enable"
     channel._silent_mode = True
-    assert channel._resolve_silent_mode_action("listen to me again") is None
+    for phrase in VoiceConfig().silent_mode_exit_phrases:
+        assert channel._resolve_silent_mode_action(phrase) == "disable"
 
 
 async def test_silent_mode_suppresses_speech() -> None:

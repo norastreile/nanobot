@@ -1,16 +1,18 @@
 """Voice channel management contract."""
 
-from nanobot.channels._manifest import field, required
+from nanobot.channels._manifest import field, required_fields
 from nanobot.channels.contracts import ChannelSetupSpec
 from nanobot.channels.plugin import ChannelPlugin
 from nanobot.channels.voice.defaults import (
+    DEFAULT_ALLOW_FROM,
     DEFAULT_AUDIO_DEVICE_INDEX,
     DEFAULT_MAX_RECORDING_DURATION,
     DEFAULT_SILENCE_DURATION,
     DEFAULT_SILENCE_THRESHOLD,
+    DEFAULT_SILENT_MODE_ENTER_PHRASES,
+    DEFAULT_SILENT_MODE_EXIT_PHRASES,
     DEFAULT_TTS_VOICE,
     DEFAULT_WAKE_WORD_ENGINE,
-    DEFAULT_ALLOW_FROM,
 )
 from nanobot.channels.voice.validation import validate
 
@@ -18,6 +20,8 @@ from nanobot.channels.voice.validation import validate
 SETUP_SPEC = ChannelSetupSpec(
     fields={
         "ttsVoice": field(kind="string", default=DEFAULT_TTS_VOICE),
+        "silentModeEnterPhrases": field(kind="list", default=DEFAULT_SILENT_MODE_ENTER_PHRASES),
+        "silentModeExitPhrases": field(kind="list", default=DEFAULT_SILENT_MODE_EXIT_PHRASES),
         "wakeWordEngine": field(
             kind="string",
             choices=("auto", "openwakeword", "porcupine"),
@@ -32,7 +36,7 @@ SETUP_SPEC = ChannelSetupSpec(
         "ledCommand": field("string"),  # optional status LED shell command, status as $1
         "allowFrom": field(kind="list", default=DEFAULT_ALLOW_FROM),
     },
-    required=(required("ttsVoice"),),
+    required=required_fields("ttsVoice", "silentModeEnterPhrases", "silentModeExitPhrases"),
     official_url="https://github.com/rhasspy/pyopen-wakeword",
     validator=validate,
     verifies_connection=True,

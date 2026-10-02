@@ -24,6 +24,8 @@ from nanobot.channels.voice.defaults import (
     DEFAULT_MAX_RECORDING_DURATION,
     DEFAULT_SILENCE_DURATION,
     DEFAULT_SILENCE_THRESHOLD,
+    DEFAULT_SILENT_MODE_ENTER_PHRASES,
+    DEFAULT_SILENT_MODE_EXIT_PHRASES,
     DEFAULT_TTS_VOICE,
     DEFAULT_WAKE_WORD_ENGINE,
     DEFAULT_WAKE_WORD_SENSITIVITY,
@@ -142,22 +144,10 @@ class VoiceConfig(Base):
     # listening running, but suppresses spoken answers until the user explicitly
     # re-enables audio output. Phrase aliases can be tailored to the user's language.
     silent_mode_enter_phrases: list[str] = Field(
-        default_factory=lambda: [
-            "go silent",
-            "silent mode",
-            "be quiet",
-            "mute yourself",
-        ]
+        default_factory=lambda: DEFAULT_SILENT_MODE_ENTER_PHRASES.copy()
     )
     silent_mode_exit_phrases: list[str] = Field(
-        default_factory=lambda: [
-            "listen to me again",
-            "resume listening",
-            "listen again",
-            "wake up again",
-            "exit silent mode",
-            "unmute yourself",
-        ]
+        default_factory=lambda: DEFAULT_SILENT_MODE_EXIT_PHRASES.copy()
     )
 
 
@@ -209,12 +199,12 @@ class VoiceChannel(BaseChannel):
             self._normalize_voice_text(phrase)
             for phrase in self.config.silent_mode_enter_phrases
             if self._normalize_voice_text(phrase)
-        ]
+        ] or DEFAULT_SILENT_MODE_ENTER_PHRASES.copy()
         self._silent_mode_exit_phrases = [
             self._normalize_voice_text(phrase)
             for phrase in self.config.silent_mode_exit_phrases
             if self._normalize_voice_text(phrase)
-        ]
+        ] or DEFAULT_SILENT_MODE_EXIT_PHRASES.copy()
         self.status_emitter = VoiceStatusEmitter()
         if config.led_command:
             self.status_emitter.add_listener(CommandStatusListener(config.led_command))

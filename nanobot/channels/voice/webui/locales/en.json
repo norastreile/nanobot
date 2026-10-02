@@ -35,6 +35,16 @@
         "placeholder": "en-US-AriaNeural",
         "help": "The voice nanobot uses to answer (https://edge-tts.com)."
       },
+      "silentModeEnterPhrases": {
+        "label": "Silent mode activation phrases",
+        "placeholder": "mute yourself",
+        "help": "Phrases that mute spoken answers. Leave empty to use defaults."
+      },
+      "silentModeExitPhrases": {
+        "label": "Silent mode deactivation phrases",
+        "placeholder": "unmute yourself",
+        "help": "Phrases that restore spoken answers. Leave empty to use defaults."
+      },
       "audioDeviceIndex": {
         "label": "Audio device index",
         "placeholder": "1",

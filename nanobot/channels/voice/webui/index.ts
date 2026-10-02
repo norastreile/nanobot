@@ -13,6 +13,8 @@ export default {
       docsUrl: chatAppGuideUrl("voice"),
       fields: [
         { key: "channels.voice.ttsVoice", section: "text-to-speech" },
+        { key: "channels.voice.silentModeEnterPhrases", section: "text-to-speech" },
+        { key: "channels.voice.silentModeExitPhrases", section: "text-to-speech" },
         { key: "channels.voice.wakeWordEngine", section: "wakeword" },
         { key: "channels.voice.wakeWordModels", section: "wakeword" },
         { key: "channels.voice.wakeWordSensitivities", section: "wakeword" },

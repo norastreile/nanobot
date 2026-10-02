@@ -8,3 +8,5 @@ DEFAULT_MAX_RECORDING_DURATION = 30
 DEFAULT_WAKE_WORD_SENSITIVITY = 0.5
 DEFAULT_TTS_VOICE = "en-US-AriaNeural"
 DEFAULT_ALLOW_FROM = ["voice_user"]
+DEFAULT_SILENT_MODE_ENTER_PHRASES = ["silent mode", "mute yourself"]
+DEFAULT_SILENT_MODE_EXIT_PHRASES = ["silent mode", "unmute yourself", "listen to me again", "listen again"]
