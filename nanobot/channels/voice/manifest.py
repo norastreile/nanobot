@@ -10,6 +10,7 @@ from nanobot.channels.voice.defaults import (
     DEFAULT_SILENCE_THRESHOLD,
     DEFAULT_TTS_VOICE,
     DEFAULT_WAKE_WORD_ENGINE,
+    DEFAULT_ALLOW_FROM,
 )
 from nanobot.channels.voice.validation import validate
 
@@ -29,7 +30,7 @@ SETUP_SPEC = ChannelSetupSpec(
         "silenceDuration": field(kind="int", default=DEFAULT_SILENCE_DURATION),  # in milliseconds
         "maxRecordingDuration": field(kind="int", default=DEFAULT_MAX_RECORDING_DURATION),  # in seconds
         "ledCommand": field("string"),  # optional status LED shell command, status as $1
-        "allowFrom": field("list"),
+        "allowFrom": field(kind="list", default=DEFAULT_ALLOW_FROM),
     },
     required=(required("ttsVoice"),),
     official_url="https://github.com/rhasspy/pyopen-wakeword",
