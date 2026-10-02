@@ -177,6 +177,7 @@ def test_empty_silent_mode_phrases_disable_matching() -> None:
 
 async def test_silent_mode_suppresses_speech() -> None:
     channel = make_channel()
+    channel._play_audio = AsyncMock()
     await channel._set_silent_mode(True)
 
     # silent mode mutes direct speech attempts as well as channel replies
@@ -184,54 +185,89 @@ async def test_silent_mode_suppresses_speech() -> None:
     assert channel._silent_mode is True
 
 
-async def test_silent_mode_confirmations_are_spoken(monkeypatch) -> None:
+async def test_silent_mode_confirmations_are_local_audio(monkeypatch) -> None:
     channel = make_channel()
     channel._speak = AsyncMock()
+    monkeypatch.setattr(voice_runtime, "edge_tts", None)
+    played_audio: list[bytes] = []
+    paths = []
+
+    async def play_audio(path):
+        paths.append(path)
+        with wave.open(str(path), "rb") as audio_file:
+            assert audio_file.getnchannels() == 1
+            assert audio_file.getsampwidth() == 2
+            assert audio_file.getframerate() == channel._sample_rate
+            assert audio_file.getnframes() == int(channel._sample_rate * 0.3)
+            played_audio.append(audio_file.readframes(audio_file.getnframes()))
+
+    channel._play_audio = AsyncMock(side_effect=play_audio)
 
     await channel._set_silent_mode(True)
     await channel._set_silent_mode(False)
+    await channel._set_silent_mode(False)
 
-    assert channel._speak.await_args_list == [
-        (("Silent Mode aktiviert.",), {"force": True}),
-        (("Silent Mode deaktiviert.",), {"force": True}),
-    ]
+    channel._speak.assert_not_awaited()
+    assert channel._play_audio.await_count == 2
+    assert played_audio[0] != played_audio[1]
+    assert all(not path.exists() for path in paths)
 
 
-async def test_silent_mode_confirmation_restores_silent_status(monkeypatch) -> None:
+def test_silent_mode_audio_has_opposite_pitch_order() -> None:
+    channel = make_channel()
+    descending = channel._silent_mode_audio(True)
+    ascending = channel._silent_mode_audio(False)
+    tone_samples = int(channel._sample_rate * 0.12)
+    pause_samples = int(channel._sample_rate * 0.06)
+
+    assert descending[:tone_samples] == ascending[-tone_samples:]
+    assert descending[-tone_samples:] == ascending[:tone_samples]
+    assert descending[tone_samples:-tone_samples] == [0] * pause_samples
+    assert 0 < max(abs(sample) for sample in descending) <= 6553
+    assert descending[0] == descending[tone_samples - 1] == descending[-1] == 0
+    high_crossings = sum(
+        previous <= 0 < current
+        for previous, current in zip(descending[:tone_samples], descending[1:tone_samples])
+    )
+    low_crossings = sum(
+        previous <= 0 < current
+        for previous, current in zip(ascending[:tone_samples], ascending[1:tone_samples])
+    )
+    assert high_crossings > low_crossings
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+@pytest.mark.parametrize("failure", [None, RuntimeError("playback failed"), asyncio.CancelledError()])
+async def test_silent_mode_confirmation_restores_status(enabled, failure) -> None:
     channel = make_channel()
     channel._running = True
+    channel._silent_mode = not enabled
     statuses: list[VoiceStatus] = []
+    paths = []
 
     class _Listener:
         async def on_voice_status(self, status: VoiceStatus) -> None:
             statuses.append(status)
 
-    class _Communicate:
-        def __init__(self, text: str, voice: str) -> None:
-            pass
-
-        async def save(self, path: str) -> None:
-            pass
-
-    class _Process:
-        async def wait(self) -> None:
-            pass
+    async def play_audio(path):
+        paths.append(path)
+        assert path.exists()
+        if failure is not None:
+            raise failure
 
     channel.status_emitter.add_listener(_Listener())
-    monkeypatch.setattr(
-        voice_runtime,
-        "edge_tts",
-        type("FakeEdgeTts", (), {"Communicate": _Communicate}),
-    )
-    monkeypatch.setattr(
-        asyncio,
-        "create_subprocess_exec",
-        AsyncMock(return_value=_Process()),
-    )
+    channel._play_audio = AsyncMock(side_effect=play_audio)
+    if isinstance(failure, asyncio.CancelledError):
+        with pytest.raises(asyncio.CancelledError):
+            await channel._set_silent_mode(enabled)
+    else:
+        await channel._set_silent_mode(enabled)
 
-    await channel._set_silent_mode(True)
-
-    assert statuses == [VoiceStatus.SPEAKING, VoiceStatus.SILENT]
+    assert channel._silent_mode is enabled
+    expected_status = VoiceStatus.SILENT if enabled else VoiceStatus.LISTENING_WAKE_WORD
+    assert statuses == [VoiceStatus.SPEAKING, expected_status]
+    assert len(paths) == 1
+    assert not paths[0].exists()
 
 
 async def test_silent_mode_skips_agent_dispatch(monkeypatch) -> None:
@@ -246,6 +282,46 @@ async def test_silent_mode_skips_agent_dispatch(monkeypatch) -> None:
 
     channel._handle_message.assert_not_awaited()
     channel.status_emitter.emit.assert_awaited_with(VoiceStatus.SILENT)
+
+
+@pytest.mark.parametrize("suffix", [".wav", ".mp3"])
+async def test_play_audio_fallback(monkeypatch, tmp_path, suffix) -> None:
+    path = tmp_path / f"audio{suffix}"
+    path.write_bytes(b"audio")
+    commands: list[str] = []
+
+    async def execute(player, *args, **kwargs):
+        commands.append(player)
+        if player in ("mpv", "aplay"):
+            raise FileNotFoundError(player)
+        if player == "ffmpeg":
+            path.with_suffix(".wav").write_bytes(b"converted")
+        return type("Process", (), {"wait": AsyncMock(return_value=0)})()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", execute)
+    await make_channel()._play_audio(path)
+
+    assert commands == (["mpv", "aplay", "paplay"] if suffix == ".wav" else
+                        ["mpv", "ffmpeg", "aplay", "paplay"])
+    assert path.exists()
+    if suffix == ".mp3":
+        assert not path.with_suffix(".wav").exists()
+
+
+async def test_play_audio_prefers_mpv(monkeypatch, tmp_path) -> None:
+    process = type("Process", (), {"wait": AsyncMock(return_value=0)})()
+    execute = AsyncMock(return_value=process)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", execute)
+    await make_channel()._play_audio(tmp_path / "audio.wav")
+    assert execute.await_count == 1
+    assert execute.await_args.args[0] == "mpv"
+
+
+async def test_play_audio_rejects_failed_player(monkeypatch, tmp_path) -> None:
+    process = type("Process", (), {"wait": AsyncMock(return_value=1)})()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", AsyncMock(return_value=process))
+    with pytest.raises(RuntimeError, match="mpv playback failed"):
+        await make_channel()._play_audio(tmp_path / "audio.wav")
 
 
 # --- TTS tests (skipped when edge-tts is not installed or offline) ---

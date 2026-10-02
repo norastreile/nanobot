@@ -29,6 +29,7 @@ nanobot agent -m "Hello!"
 
   Without a player the channel refuses to start and logs a clear error instead
   of staying silent later.
+
 - A configured transcription provider, because your speech is transcribed in
   the cloud before it reaches the agent. The default provider is Groq Whisper;
   see [Transcription Settings](../configuration.md#transcription-settings).
@@ -130,11 +131,24 @@ The channel moves through `recording`, `thinking`, and `speaking`, and the
 reply uses the same model and workspace as your local CLI check. With no wake
 words configured, any built-in wake word triggers recording.
 
+## Silent mode
+
+Say your wake word followed by `go silent` or `silent mode` to suppress spoken
+replies. Two short descending tones confirm that silent mode is on. Say your
+wake word followed by `listen to me again` or `exit silent mode` to restore
+spoken replies; two ascending tones confirm that silent mode is off.
+
+The microphone and wake word detection remain active in silent mode. The
+confirmation tones are generated locally, without Edge TTS or a network request,
+and use the existing audio player. Speech transcription still uses the configured
+provider. You can customize the command phrases with `silentModeEnterPhrases`
+and `silentModeExitPhrases` in the voice channel configuration.
+
 ## Optional: drive a status LED
 
 `ledCommand` runs a shell command on every state change via
 `sh -c <command>`, with the state available as `$1`. Possible states:
-`idle`, `listening_wake_word`, `recording`, `thinking`, `speaking`.
+`idle`, `listening_wake_word`, `recording`, `thinking`, `speaking`, `silent`.
 
 Keep the mapping from state to color in a small script instead of a long
 inline command:
@@ -181,8 +195,8 @@ Then set:
   works but the output device or volume is wrong; test with
   `mpv --no-video <file>` or `aplay <file>` directly.
 - **Raspberry Pi (32-bit OS)**: the channel automatically uses Porcupine, which
-  ships with some English keywords by default. For the used pvporcupine version 
-  (1.9.5, the last keyless release), no custom model files can be generated, 
+  ships with some English keywords by default. For the used pvporcupine version
+  (1.9.5, the last keyless release), no custom model files can be generated,
   so only the built-in keywords can be used for the 32-bit fallback.
 
 ## Next: memory, automations, MCP tools

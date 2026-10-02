@@ -2,6 +2,7 @@
 """Voice channel with wake word detection for local microphone/speaker interaction."""
 
 import asyncio
+import math
 import platform
 import re
 import shutil
@@ -245,10 +246,57 @@ class VoiceChannel(BaseChannel):
             return
         self._silent_mode = enabled
         self.logger.info("Voice silent mode {}", "enabled" if enabled else "disabled")
+        await self._play_silent_mode_tones(enabled)
+
+    async def _play_silent_mode_tones(self, enabled: bool) -> None:
+        frequencies = (493.883301, 622.253967, 739.988845)
         if enabled:
-            await self._speak("Silent Mode aktiviert.", force=True)
-        else:
-            await self._speak("Silent Mode deaktiviert.", force=True)
+            frequencies = frequencies[::-1]
+        tone_samples = int(self._sample_rate * 0.12)
+        fade_samples = max(1, int(self._sample_rate * 0.01))
+        audio_data: list[int] = []
+        for frequency in frequencies:
+            if audio_data:
+                audio_data.extend([0] * int(self._sample_rate * 0.03))
+            for sample_index in range(tone_samples):
+                envelope = min(
+                    1.0, sample_index / fade_samples,
+                    (tone_samples - 1 - sample_index) / fade_samples,
+                )
+                audio_data.append(int(
+                    6553 * envelope
+                    * math.sin(2 * math.pi * frequency * sample_index / self._sample_rate)
+                ))
+
+        try:
+            await self.status_emitter.emit(VoiceStatus.SPEAKING)
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "silent-mode.wav"
+                self._save_wav(path, audio_data)
+                for command in (
+                    ("mpv", "--no-video", "--really-quiet", str(path)),
+                    ("aplay", str(path)),
+                    ("paplay", str(path)),
+                ):
+                    try:
+                        process = await asyncio.create_subprocess_exec(
+                            *command,
+                            stdout=asyncio.subprocess.DEVNULL,
+                            stderr=asyncio.subprocess.DEVNULL,
+                        )
+                    except FileNotFoundError:
+                        continue
+                    if await process.wait() != 0:
+                        raise RuntimeError(f"{command[0]} tone playback failed")
+                    break
+                else:
+                    raise RuntimeError("No audio player available for silent mode tones")
+        except Exception as error:
+            self.logger.error("Could not play silent mode tones: {}", error)
+        finally:
+            if self._running:
+                status = VoiceStatus.SILENT if self._silent_mode else VoiceStatus.LISTENING_WAKE_WORD
+                await self.status_emitter.emit(status)
 
     @staticmethod
     def _audio_player_available() -> bool:
