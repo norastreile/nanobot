@@ -41,7 +41,10 @@ def test_omitted_tts_voice_uses_runtime_default(monkeypatch) -> None:
 
     assert checked_voices == ["en-US-AriaNeural"]
     assert _check(payload, "tts_voice")["status"] == "pass"
-    assert payload["missing_fields"] == []
+    assert payload["missing_fields"] == [
+        "silentModeEnterPhrases",
+        "silentModeExitPhrases",
+    ]
 
 
 def test_empty_tts_voice_fails(monkeypatch) -> None:
