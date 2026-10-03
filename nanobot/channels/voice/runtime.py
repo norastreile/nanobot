@@ -26,6 +26,7 @@ from nanobot.channels.voice.defaults import (
     DEFAULT_SILENCE_THRESHOLD,
     DEFAULT_SILENT_MODE_ENTER_PHRASES,
     DEFAULT_SILENT_MODE_EXIT_PHRASES,
+    DEFAULT_SPEAKER_ID,
     DEFAULT_TTS_VOICE,
     DEFAULT_WAKE_WORD_ENGINE,
     DEFAULT_WAKE_WORD_SENSITIVITY,
@@ -101,12 +102,6 @@ try:
     import edge_tts
 except ImportError:
     edge_tts = None  # type: ignore[assignment]
-
-# Identity of the person speaking into the local microphone. Used as
-# sender_id for inbound messages so allowFrom can grant access to "the
-# person at the device" without a real user ID.
-SPEAKER_ID = "voice_user"
-
 
 class VoiceConfig(Base):
     """Voice Channel configuration."""
@@ -658,7 +653,7 @@ class VoiceChannel(BaseChannel):
 
         # Send to agent via message bus
         await self._handle_message(
-            sender_id=SPEAKER_ID,
+            sender_id=DEFAULT_SPEAKER_ID,
             chat_id="voice",
             content=transcription,
             metadata={"source": "voice"}
