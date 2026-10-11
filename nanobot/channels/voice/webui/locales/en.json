@@ -46,7 +46,7 @@
         "help": "Phrases that restore spoken answers. Leave empty to use defaults."
       },
       "audioDeviceIndex": {
-        "label": "Audio device index",
+        "label": "Audio input device",
         "placeholder": "1",
         "help": "Index of the microphone device used for recording."
       },

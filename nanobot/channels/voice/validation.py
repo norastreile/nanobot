@@ -92,6 +92,41 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
     validation_values.setdefault("ttsVoice", DEFAULT_TTS_VOICE)
     checks, missing = required_checks("voice", validation_values)
 
+    audio_device_index = values.get("audioDeviceIndex")
+    if audio_device_index is not None and audio_device_index != "":
+        if _audio_device_index_ok(audio_device_index):
+            checks.append(
+                check(
+                    "audio_device_index",
+                    "Audio input device",
+                    "pass",
+                    "The audio device index is a non-negative integer.",
+                )
+            )
+        else:
+            logger.info("Validation failed: Audio device index is not a valid non-negative integer.")
+            checks.append(
+                check(
+                    "audio_device_index",
+                    "Audio input device",
+                    "fail",
+                    "audioDeviceIndex must be an integer >= 0.",
+                )
+            )
+
+    if _module_available("pvrecorder"):
+        checks.append(check("recorder", "Microphone recorder", "pass", "pvrecorder installed."))
+    else:
+        logger.info("Validation failed: Recorder module 'pvrecorder' is not available.")
+        checks.append(
+            check(
+                "recorder",
+                "Microphone recorder",
+                "fail",
+                f"pvrecorder is not installed. {_ENABLE_HINT}",
+            )
+        )
+
     voice_name = string_value(validation_values.get("ttsVoice"))
     if not _module_available("edge_tts"):
         logger.info("Validation failed: Edge TTS package is not installed.")
@@ -113,59 +148,23 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
                 "ttsVoice cannot be empty.",
             )
         )
-    else:
-        if _edge_tts_voice_exists(voice_name):
-            checks.append(
-                check(
-                    "tts_voice",
-                    "Edge TTS voice",
-                    "pass",
-                    f"Voice '{voice_name}' is available in Edge TTS.",
-                )
-            )
-        else:
-            logger.info("Validation failed: Voice not found in the Edge TTS voice list.")
-            checks.append(
-                check(
-                    "tts_voice",
-                    "Edge TTS voice",
-                    "fail",
-                    f"Voice '{voice_name}' was not found in the Edge TTS voice list.",
-                )
-            )
-
-    audio_device_index = values.get("audioDeviceIndex")
-    if audio_device_index is not None and audio_device_index != "":
-        if _audio_device_index_ok(audio_device_index):
-            checks.append(
-                check(
-                    "audio_device_index",
-                    "Audio device index",
-                    "pass",
-                    "The audio device index is a non-negative integer.",
-                )
-            )
-        else:
-            logger.info("Validation failed: Audio device index is not a valid non-negative integer.")
-            checks.append(
-                check(
-                    "audio_device_index",
-                    "Audio device index",
-                    "fail",
-                    "audioDeviceIndex must be an integer >= 0.",
-                )
-            )
-
-    if _module_available("pvrecorder"):
-        checks.append(check("recorder", "Microphone recorder", "pass", "pvrecorder installed."))
-    else:
-        logger.info("Validation failed: Recorder module 'pvrecorder' is not available.")
+    elif _edge_tts_voice_exists(voice_name):
         checks.append(
             check(
-                "recorder",
-                "Microphone recorder",
+                "tts_voice",
+                "Edge TTS voice",
+                "pass",
+                f"Voice '{voice_name}' is available in Edge TTS.",
+            )
+        )
+    else:
+        logger.info("Validation failed: Voice not found in the Edge TTS voice list.")
+        checks.append(
+            check(
+                "tts_voice",
+                "Edge TTS voice",
                 "fail",
-                f"pvrecorder is not installed. {_ENABLE_HINT}",
+                f"Voice '{voice_name}' was not found in the Edge TTS voice list.",
             )
         )
 
