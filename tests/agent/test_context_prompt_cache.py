@@ -166,6 +166,16 @@ def test_channel_format_hint_telegram(tmp_path) -> None:
     assert "messaging app" in prompt
 
 
+def test_channel_format_hint_voice(tmp_path) -> None:
+    """Voice channel should get a spoken-response format hint."""
+    workspace = _make_workspace(tmp_path)
+    builder = ContextBuilder(workspace)
+
+    prompt = builder.build_system_prompt(channel="voice")
+    assert "Format Hint" in prompt
+    assert "spoken aloud" in prompt
+
+
 def test_channel_format_hint_whatsapp(tmp_path) -> None:
     """WhatsApp should get plain-text format hint."""
     workspace = _make_workspace(tmp_path)

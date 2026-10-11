@@ -30,6 +30,9 @@ This conversation is via email. Structure with clear sections. Markdown may not 
 {% elif channel == 'cli' or channel == 'mochat' %}
 ## Format Hint
 Output is rendered in a terminal. Avoid markdown headings and tables. Use plain text with minimal formatting.
+{% elif channel == 'voice' %}
+## Format Hint
+This response will be spoken aloud. Be concise and natural; avoid emojis and Markdown.
 {% endif %}
 
 ## External Content
