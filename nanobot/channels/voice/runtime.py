@@ -728,8 +728,23 @@ class VoiceChannel(BaseChannel):
         try:
             # Generate TTS
             speech_text = self._strip_markdown_for_tts(text)
-            communicate = edge_tts.Communicate(speech_text, self.config.tts_voice)
-            await communicate.save(str(temp_path))
+            retry_delay = 2.0
+            for attempt in range(5):
+                try:
+                    communicate = edge_tts.Communicate(speech_text, self.config.tts_voice)
+                    await communicate.save(str(temp_path))
+                    break
+                except Exception as e:
+                    if attempt == 4:
+                        raise
+                    self.logger.warning(
+                        "Edge TTS request failed (attempt {}/5); retrying in {}s: {}",
+                        attempt + 1,
+                        retry_delay,
+                        e,
+                    )
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2
 
             # Play audio
             process = await asyncio.create_subprocess_exec(

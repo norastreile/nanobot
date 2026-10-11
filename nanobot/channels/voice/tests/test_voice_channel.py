@@ -330,6 +330,69 @@ async def test_speak_prefers_mpv(monkeypatch) -> None:
     assert requests == [("hello", "en-US-AriaNeural")]
 
 
+async def test_speak_retries_tts_with_exponential_backoff(monkeypatch) -> None:
+    attempts = 0
+    delays: list[float] = []
+
+    class FlakyCommunicate:
+        def __init__(self, _text: str, _voice: str) -> None:
+            pass
+
+        async def save(self, path: str) -> None:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                raise RuntimeError("temporary TTS failure")
+            Path(path).write_bytes(b"audio")
+
+    async def record_delay(delay: float) -> None:
+        delays.append(delay)
+
+    monkeypatch.setattr(
+        voice_runtime,
+        "edge_tts",
+        SimpleNamespace(Communicate=FlakyCommunicate),
+    )
+    monkeypatch.setattr(asyncio, "sleep", record_delay)
+    process = type("Process", (), {"wait": AsyncMock(return_value=0)})()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", AsyncMock(return_value=process))
+
+    await make_channel()._speak("hello")
+
+    assert attempts == 3
+    assert delays == [2.0, 4.0]
+
+
+async def test_speak_raises_after_tts_retries_are_exhausted(monkeypatch) -> None:
+    attempts = 0
+    delays: list[float] = []
+
+    class FailingCommunicate:
+        def __init__(self, _text: str, _voice: str) -> None:
+            pass
+
+        async def save(self, _path: str) -> None:
+            nonlocal attempts
+            attempts += 1
+            raise RuntimeError("persistent TTS failure")
+
+    async def record_delay(delay: float) -> None:
+        delays.append(delay)
+
+    monkeypatch.setattr(
+        voice_runtime,
+        "edge_tts",
+        SimpleNamespace(Communicate=FailingCommunicate),
+    )
+    monkeypatch.setattr(asyncio, "sleep", record_delay)
+
+    with pytest.raises(RuntimeError, match="persistent TTS failure"):
+        await make_channel()._speak("hello")
+
+    assert attempts == 5
+    assert delays == [2.0, 4.0, 8.0, 16.0]
+
+
 async def test_speak_cleans_temporary_audio_when_player_raises(monkeypatch) -> None:
     _mock_edge_tts(monkeypatch)
     temporary_audio: list[Path] = []
