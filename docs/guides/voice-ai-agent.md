@@ -27,6 +27,12 @@ nanobot agent -m "Hello!"
   - `ffmpeg` together with `alsa-utils` (`aplay`) or `pulseaudio-utils`
     (`paplay`)
 
+  On macOS, install the recommended player with Homebrew:
+
+  ```bash
+  brew install mpv
+  ```
+
   Without a player the channel refuses to start and logs a clear error instead
   of staying silent later.
 

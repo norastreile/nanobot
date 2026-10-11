@@ -30,6 +30,7 @@ from nanobot.channels.voice.defaults import (
     DEFAULT_TTS_VOICE,
     DEFAULT_WAKE_WORD_ENGINE,
     DEFAULT_WAKE_WORD_SENSITIVITY,
+    audio_player_available,
 )
 from nanobot.channels.voice.status import CommandStatusListener, VoiceStatus, VoiceStatusEmitter
 from nanobot.config.schema import Base
@@ -291,11 +292,7 @@ class VoiceChannel(BaseChannel):
         Without any of them responses could never be played aloud, so the
         channel reports the gap at startup instead of staying silent later.
         """
-        if shutil.which("mpv"):
-            return True
-        return bool(shutil.which("ffmpeg")) and bool(
-            shutil.which("aplay") or shutil.which("paplay")
-        )
+        return audio_player_available(shutil.which)
 
     def _available_engine(self) -> str:
         """Return the fully importable wake word engine ("none" if neither is)."""

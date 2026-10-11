@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import shutil
 from typing import Any
+
+import pytest
 
 import nanobot.channels.voice.validation as voice_validation
 from nanobot.channels.contracts import ChannelValidationContext
@@ -61,6 +64,32 @@ def test_missing_edge_tts_reports_dependency_error(monkeypatch) -> None:
     voice_check = _check(payload, "tts_voice")
     assert voice_check["status"] == "fail"
     assert "edge-tts is not installed" in voice_check["message"]
+
+
+@pytest.mark.parametrize(
+    ("installed", "expected_status"),
+    [
+        ({}, "fail"),
+        ({"mpv": "/usr/bin/mpv"}, "pass"),
+        ({"ffmpeg": "/usr/bin/ffmpeg", "aplay": "/usr/bin/aplay"}, "pass"),
+        ({"ffmpeg": "/usr/bin/ffmpeg", "paplay": "/usr/bin/paplay"}, "pass"),
+        ({"aplay": "/usr/bin/aplay"}, "fail"),
+    ],
+)
+def test_audio_player_check_detects_supported_backends(
+    monkeypatch, installed: dict[str, str], expected_status: str
+) -> None:
+    monkeypatch.setattr(
+        voice_validation,
+        "_module_available",
+        lambda name: name in {"pvrecorder", "edge_tts"},
+    )
+    monkeypatch.setattr(voice_validation, "_edge_tts_voice_exists", lambda _voice_name: True)
+    monkeypatch.setattr(shutil, "which", lambda name: installed.get(name))
+
+    payload = voice_validation.validate({"ttsVoice": "en-US-AriaNeural"}, CONTEXT)
+
+    assert _check(payload, "audio_player")["status"] == expected_status
 
 
 def test_valid_voice_and_device_index_passes(monkeypatch) -> None:

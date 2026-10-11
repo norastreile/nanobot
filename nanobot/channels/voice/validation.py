@@ -22,7 +22,7 @@ from nanobot.channels.validation import (
     status_from_checks,
     string_value,
 )
-from nanobot.channels.voice.defaults import DEFAULT_TTS_VOICE
+from nanobot.channels.voice.defaults import DEFAULT_TTS_VOICE, audio_player_available
 
 _ENABLE_HINT = "Run: nanobot plugins enable voice."
 
@@ -166,6 +166,27 @@ def validate(values: dict[str, Any], _context: ChannelValidationContext) -> dict
                 "Microphone recorder",
                 "fail",
                 f"pvrecorder is not installed. {_ENABLE_HINT}",
+            )
+        )
+
+    if audio_player_available():
+        checks.append(
+            check(
+                "audio_player",
+                "Audio player",
+                "pass",
+                "A supported audio playback backend is available.",
+            )
+        )
+    else:
+        logger.info("Validation failed: No supported audio player is available.")
+        checks.append(
+            check(
+                "audio_player",
+                "Audio player",
+                "fail",
+                "No supported audio player found. Install mpv, or install ffmpeg "
+                "together with alsa-utils (aplay) or pulseaudio-utils (paplay).",
             )
         )
 
